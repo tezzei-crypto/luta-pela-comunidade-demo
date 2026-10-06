@@ -1,0 +1,14 @@
+{
+  "name": "luta-pela-comunidade-demo",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "24.x"
+  },
+  "scripts": {
+    "start": "node server.mjs",
+    "build": "node --check server.mjs",
+    "test": "node access.test.mjs && node agenda.test.mjs && node registration.test.mjs && node sponsorship.test.mjs"
+  }
+}
