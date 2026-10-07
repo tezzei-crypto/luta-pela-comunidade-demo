@@ -25,7 +25,7 @@ export async function handleRegistration(request,env={},send=fetch,injectedStore
  if(get('website'))return reply(400,'Envio não permitido.');
  const student=get('studentName'),guardian=get('guardianName'),birth=get('birthDate'),unit=UNITS[get('unit')],email=get('guardianEmail'),phone=get('guardianPhone'),relationship=get('relationship');
  if([student,guardian].some(v=>v.length<3||v.length>120||/[\r\n\x00-\x1f]/.test(v)))return reply(400,'Informe os nomes completos do aluno e do responsável.');
- const age=ageAt(birth);if(age<0||age>16)return reply(400,'A inscrição é destinada a participantes com até 16 anos. Confira a data de nascimento.');
+ const age=ageAt(birth);if(age<0||age>17)return reply(400,'A inscrição é destinada a participantes com até 17 anos. Confira a data de nascimento.');
  if(!unit)return reply(400,'Selecione um núcleo válido.');
  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||email.length>254||!/^\+?[\d ()-]{10,25}$/.test(phone)||!['Mãe','Pai','Responsável legal'].includes(relationship))return reply(400,'Confira o contato e o vínculo do responsável.');
  if(['participationConsent','medicalConsent','dataConsent'].some(k=>get(k)!=='on'))return reply(400,'As três declarações do responsável são obrigatórias.');

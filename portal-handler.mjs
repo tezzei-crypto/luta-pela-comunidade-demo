@@ -1,3 +1,4 @@
+import {handleProfessionals} from './professional-handler.mjs';
 import {handleStudentDetails} from './student-details-handler.mjs';
 import {handleTeaching} from './teacher-handler.mjs';
 import {handleAgenda} from './agenda-handler.mjs';
@@ -50,6 +51,7 @@ export async function handlePortal(req,env=process.env,injectedStore){
   const roster=async()=>staff?store.students():linked.length?store.students(linked):[];
   if(route==='/auth/verify'&&method==='POST')return json({access_token:session.access_token,expires_in:session.expires_in,role,email:member.email});
   if(route==='/me'&&method==='GET')return json({role,email:member.email,user_id:actor});
+  const professionals=await handleProfessionals({req,route,method,url,store,actor});if(professionals)return professionals;
   const details=await handleStudentDetails({req,route,method,store,actor});if(details)return details;
   const teaching=await handleTeaching({route,method,req,url,store,actor});if(teaching)return teaching;
   if(route==='/dashboard'&&method==='GET'){
@@ -86,6 +88,11 @@ export async function handlePortal(req,env=process.env,injectedStore){
     const response=await store.download(d.object_path);return new Response(response.body,{headers:{...privateHeaders,'Content-Type':d.mime,'Content-Disposition':`attachment; filename="inscricao-${d.id}.${d.mime==='application/pdf'?'pdf':d.mime==='image/png'?'png':'jpg'}"`}});
    }
   }
+  if(route==='/groups'&&method==='GET')return json({groups:await store.groups(actor,url.searchParams.get('unit'))});
+  if(route==='/groups'&&method==='POST')return json({group:await store.saveGroup(actor,null,await body()),message:'Turma e matrículas salvas.'},201);
+  const groupMatch=route.match(/^\/groups\/([0-9a-f-]{36})$/i);
+  if(groupMatch&&method==='GET')return json({group:await store.group(actor,groupMatch[1])});
+  if(groupMatch&&method==='PATCH')return json({group:await store.saveGroup(actor,groupMatch[1],await body()),message:'Turma e matrículas atualizadas. Aulas já abertas preservam a lista registrada.'});
   if(route==='/classes'&&method==='GET'){requireRole('admin','secretary','teacher');return json({classes:await store.classes(actor,url.searchParams.get('unit'))})}
   if(route==='/classes'&&method==='POST'){requireRole('admin','secretary','teacher');return json({lesson:await store.createClass(actor,await body())},201)}
   if(route==='/attendance.csv'&&method==='GET'){

@@ -1,3 +1,5 @@
+import {professionalTools} from './professional-tools.mjs';
+import {schedulingTools} from './scheduling-tools.mjs';
 import {studentDetails} from './student-details.mjs';
 import {teacherTools} from './teacher-tools.mjs';
 import {migrateMembers} from './portal-migrations.mjs';
@@ -46,6 +48,8 @@ export function createSqliteStore(env,{transport=fetch}={}){
  function objectPath(key){if(typeof key!=='string'||!key||key.split('/').some(p=>!p||p==='.'||p==='..'||!/^[a-zA-Z0-9_.-]+$/.test(p)))fail('Arquivo inválido.');const full=path.resolve(objects,...key.split('/'));if(!full.startsWith(objects+path.sep))fail('Arquivo inválido.');return full}
  const teaching=teacherTools({db,get,all,run,tx,requireRole,audit});
  const project=projectTools({db,get,all,run,tx,requireRole,audit,requireUnit:teaching.requireUnit});
+ const professionals=professionalTools({db,get,all,run,tx,requireRole,audit});
+ const scheduling=schedulingTools({db,get,all,run,tx,requireRole,audit,...professionals});
  const initial=env.BOOTSTRAP_ADMIN_EMAIL?.trim().toLowerCase();
  if(initial&&emailValid(initial)&&!get("SELECT user_id FROM members WHERE role='admin'")){
   if(get('SELECT user_id FROM members WHERE email=?',initial))throw Error('A conta inicial já existe sem função administrativa; confira a configuração.');
@@ -66,7 +70,8 @@ export function createSqliteStore(env,{transport=fetch}={}){
   }return rows.length;
  })}
  const api={
-  ...project,...teaching,...studentDetails({db,get,all,run,tx,requireRole,audit}),
+  ...project,...teaching,...professionals,...scheduling,...studentDetails({db,get,all,run,tx,requireRole,audit}),
+  async sendBookingNotice(actor,id){const n=await scheduling.claimBookingNotice(actor,id);if(!n)return;let sent=false;try{if(!env.RESEND_API_KEY||!env.MAIL_FROM)throw Error('Email indisponível');const to=[...new Set([n.email,env.BOOTSTRAP_ADMIN_EMAIL].filter(emailValid))];const r=await transport('https://api.resend.com/emails',{method:'POST',headers:{Authorization:'Bearer '+env.RESEND_API_KEY,'Content-Type':'application/json','Idempotency-Key':'booking-'+id},body:JSON.stringify({from:env.MAIL_FROM,to,subject:'Nova solicitação na agenda — Luta pela Comunidade',text:'Há uma nova solicitação de atendimento no portal privado.\nProtocolo: '+id+'\nConsulte os detalhes na área Agenda após entrar com seu email. A secretaria deve confirmar com a família por WhatsApp.\n'+(env.PUBLIC_ORIGIN||env.RENDER_EXTERNAL_URL||'')+'/portal/#schedule-area'}),signal:AbortSignal.timeout(15000)});sent=r.ok&&!!(await r.json()).id}catch{}await scheduling.bookingNoticeResult(id,sent)},
   close:()=>db.close(),
   async requestCode(email){
    email=email.trim().toLowerCase();if(!emailValid(email)||!get('SELECT 1 FROM members WHERE email=? AND active=1',email))return;
@@ -114,7 +119,7 @@ export function createSqliteStore(env,{transport=fetch}={}){
   setMember:async(actor,uid,role,active)=>tx(()=>{
    requireRole(actor,['admin']);const target=get('SELECT * FROM members WHERE user_id=?',uid);
    if(actor===uid||!target||target.role==='admin'||!['guardian','secretary','psychologist','social_worker','teacher'].includes(role)||role==='teacher'&&target.role!=='teacher'||typeof active!=='boolean')fail('Conta inválida.',403);
-   run('UPDATE members SET role=?,active=? WHERE user_id=?',role,Number(active),uid);run('DELETE FROM links WHERE user_id=?',uid);run('DELETE FROM teacher_units WHERE user_id=?',uid);run("UPDATE teacher_profiles SET status='pending',version=version+1 WHERE user_id=?",uid);run('DELETE FROM sessions WHERE user_id=?',uid);run('DELETE FROM challenges WHERE email=?',target.email);audit(actor,'member.update:'+uid);
+   run('UPDATE members SET role=?,active=? WHERE user_id=?',role,Number(active),uid);run('DELETE FROM links WHERE user_id=?',uid);run('DELETE FROM teacher_units WHERE user_id=?',uid);run("UPDATE teacher_profiles SET status='pending',version=version+1 WHERE user_id=?",uid);run("UPDATE professional_profiles SET status='pending',version=version+1 WHERE user_id=?",uid);run('DELETE FROM sessions WHERE user_id=?',uid);run('DELETE FROM challenges WHERE email=?',target.email);audit(actor,'member.update:'+uid);
   }),
   registrations:async(status,offset=0)=>all('SELECT id,student_name,birth_date,unit,status,student_id,version,created_at FROM registrations WHERE status=? ORDER BY created_at,id LIMIT 51 OFFSET ?',status,offset),
   registration:async id=>asRegistration(get('SELECT * FROM registrations WHERE id=?',id)),

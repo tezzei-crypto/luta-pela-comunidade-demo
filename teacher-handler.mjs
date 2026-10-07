@@ -31,6 +31,6 @@ export async function handleTeaching({route,method,req,url,store,actor}){
  const report=route.match(/^\/reports\/([0-9a-f-]{36})$/i);
  if(report&&method==='GET')return json({report:await store.report(actor,report[1])});
  if(report&&method==='POST')return json({...await store.updateReport(actor,report[1],await body()),message:'Acompanhamento registrado; relato original preservado.'});
- if(route==='/reports.csv'&&method==='GET'){const rows=await store.reportsExport(actor,url.searchParams.get('unit'));return new Response(csv(rows,['id','kind','unit','student_id','student_name','occurred_at','category','description','actions','guardian_contact','referral','status','version','author_email','created_at','updates_json']),{headers:{...headers,'Content-Type':'text/csv; charset=utf-8','Content-Disposition':'attachment; filename="relatos-restritos.csv"'}})}
+ if(route==='/reports.csv'&&method==='GET'){const rows=await store.reportsExport(actor,url.searchParams.get('unit'));return new Response(csv(rows,['id','kind','unit','student_id','student_name','occurred_at','category','description','actions','guardian_contact','referral','details_json','status','version','author_email','created_at','updates_json']),{headers:{...headers,'Content-Type':'text/csv; charset=utf-8','Content-Disposition':'attachment; filename="relatos-restritos.csv"'}})}
  return null;
 }
