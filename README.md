@@ -28,3 +28,16 @@ render.yaml serve como referência para configurar o serviço existente; não cr
 ## Professores e ocorrências
 
 Área `/professor/`, cadastro e conferência pela administração. Professores atuam somente nos núcleos autorizados, com chamada e relatos privados. A habilitação requer foto e diploma conferidos. Cada novo documento retorna a situação para conferência. Relatos originais são preservados; complementos, encerramento e reabertura geram histórico. CSV administrativo dos relatos inclui `updates_json`.
+
+
+## Turmas, profissionais e agenda
+
+O menu autenticado separa Alunos, Candidatos, Professores, Psicologia e assistência social, Agenda, Turmas e matrículas, Presença e Relatos. A chamada usa botões por aluno e gravação em lote. A lista é capturada ao abrir a aula; uma edição posterior da turma preserva chamadas anteriores.
+
+BOOTSTRAP_AMAVALE_GROUPS=true, junto do arquivo privado inicial, cadastra uma única vez as turmas autorizadas de terça/quinta: 11–17 anos às 15:00–16:00 e 5–10 anos às 16:25–17:00. Matrículas iniciais consideram a idade na data da implantação e somente os IDs da importação aprovada. Não altera matrícula em reinícios. Aniversários e novas aprovações exigem conferência da matrícula pela administração.
+
+Profissionais entram por código no email. RG/CPF e documentos só são acessíveis ao próprio profissional e à administração. A liberação exige conferência humana, foto, conselho atualizado e prazo de nova conferência. Novos documentos suspendem a oferta de horários até reconferência. Não há consulta automática aos conselhos.
+
+Horários são explícitos, em Brasília, por núcleo. Reserva com transação SQLite, prevenção de sobreposição do profissional/aluno, idempotência e controle de versão. A secretaria confirma por WhatsApp e registra a confirmação. O sistema não envia WhatsApp automaticamente. Solicitações persistem mesmo com falha no aviso por email.
+
+Os formulários Ocorrência e Lesão usam os campos do modelo Relatorios_Jiu_Jitsu_FJJE_Rio, sem exigir upload do XLS e sem transformar relato em diagnóstico. O autor e horário são registrados; complementos preservam o original.

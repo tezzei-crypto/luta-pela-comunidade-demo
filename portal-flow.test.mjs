@@ -13,7 +13,7 @@ import {csv,parseCsv} from './portal-domain.mjs';
 const pupil={id:'UND1_000001',name:'Aluno Fictício de Teste',birth_date:'2015-01-01',status:'approved',version:0};
 async function fixture(t){
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'lpc-flow-')),mail=[];
- const env={PORTAL_DATA_DIR:dir,PORTAL_SECRET:'only-tests-'.repeat(4),BOOTSTRAP_ADMIN_EMAIL:'admin@example.test',BOOTSTRAP_CONTACTS_FILE:'',BOOTSTRAP_STUDENTS_FILE:'',RESEND_API_KEY:'fake',MAIL_FROM:'test@example.test',PUBLIC_ORIGIN:'https://example.test',PORTAL_INTAKE_ACTIVE:'true'};
+ const env={PORTAL_DATA_DIR:dir,PORTAL_SECRET:'only-tests-'.repeat(4),BOOTSTRAP_ADMIN_EMAIL:'admin@example.test',BOOTSTRAP_CONTACTS_FILE:'',BOOTSTRAP_STUDENTS_FILE:'',BOOTSTRAP_AMAVALE_GROUPS:'false',RESEND_API_KEY:'fake',MAIL_FROM:'test@example.test',PUBLIC_ORIGIN:'https://example.test',PORTAL_INTAKE_ACTIVE:'true'};
  const store=createSqliteStore(env,{transport:async(u,o)=>{mail.push(JSON.parse(o.body));return Response.json({id:'fake'})}});
  t.after(()=>{store.close();if(!dir.startsWith(path.join(os.tmpdir(),'lpc-flow-')))throw Error('Unsafe test cleanup');fs.rmSync(dir,{recursive:true,force:true})});
  async function login(email){await store.requestCode(email);return (await store.verifyCode(email,mail.at(-1).text.match(/\b\d{8}\b/)[0])).access_token}
@@ -163,6 +163,10 @@ test('Contato do aluno: visível só para vinculados, versão e importação sem
  const guardian=await store.provision('guardian@example.test','guardian'),token=await login(guardian.email);assert.equal((await request('/students/'+pupil.id+'/contact',{token})).status,403);await store.link(admin.user_id,guardian.user_id,pupil.id);
  c=(await (await request('/students/'+pupil.id+'/contact',{token})).json()).contact;assert.equal(c.guardian_name,'Responsável corrigido');assert.equal((await request('/students/UND2_000001/contact',{token})).status,403);assert.equal((await request('/students/'+pupil.id+'/contact',{token,method:'PATCH',data:{...c,guardian_email:'another@example.test'}})).status,403);
  const exported=await request('/contacts.csv');assert.equal(exported.status,200);assert.match(await exported.text(),/Responsável corrigido/);assert.equal((await request('/contacts.csv',{token})).status,403);
+});
+
+test('Amavale: inicialização de duas turmas por idade, horários e preservação após reiniciar',async t=>{
+ const {env,store,admin}=await fixture(t),{execFileSync}=await import('node:child_process');const source=path.join(env.PORTAL_DATA_DIR,'seed-groups.csv');const year=new Date().getUTCFullYear(),rows=[{...pupil,birth_date:(year-12)+'-01-01'},{...pupil,id:'UND1_000002',name:'Infantil de teste',birth_date:(year-8)+'-01-01'},{...pupil,id:'UND1_000003',name:'Fora da faixa de teste',birth_date:(year-20)+'-01-01'}];fs.writeFileSync(source,csv(rows));const options={cwd:import.meta.dirname,env:{...process.env,...env,RENDER:'false',BOOTSTRAP_STUDENTS_FILE:source,BOOTSTRAP_AMAVALE_GROUPS:'true'},encoding:'utf8'},args=['--input-type=module','--eval',"import {initializePortal} from './portal-bootstrap.mjs';await initializePortal();"];execFileSync(process.execPath,args,options);const groups=await store.groups(admin.user_id,'amavale');assert.equal(groups.length,2);assert.deepEqual(groups.map(g=>g.enrolled),[1,1]);assert.deepEqual(groups[0].weekdays,[2,4]);assert.equal(groups[0].start_time,'15:00');assert.equal(groups[0].end_time,'16:00');assert.equal(groups[1].start_time,'16:25');assert.equal(groups[1].end_time,'17:00');await store.saveGroup(admin.user_id,groups[0].id,{...groups[0],students:[],version:1});execFileSync(process.execPath,args,options);assert.equal((await store.groups(admin.user_id,'amavale'))[0].enrolled,0);
 });
 test('Prospect completo continua pendente: somente admin aprova e gera um único ID',async t=>{
  const {request,store,admin,login}=await fixture(t);const secretary=await store.provision('secretary@example.test','secretary'),token=await login(secretary.email),id=randomUUID();
