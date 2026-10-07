@@ -13,7 +13,7 @@ import {csv,parseCsv} from './portal-domain.mjs';
 const pupil={id:'UND1_000001',name:'Aluno Fictício de Teste',birth_date:'2015-01-01',status:'approved',version:0};
 async function fixture(t){
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'lpc-flow-')),mail=[];
- const env={PORTAL_DATA_DIR:dir,PORTAL_SECRET:'only-tests-'.repeat(4),BOOTSTRAP_ADMIN_EMAIL:'admin@example.test',RESEND_API_KEY:'fake',MAIL_FROM:'test@example.test',PUBLIC_ORIGIN:'https://example.test',PORTAL_INTAKE_ACTIVE:'true'};
+ const env={PORTAL_DATA_DIR:dir,PORTAL_SECRET:'only-tests-'.repeat(4),BOOTSTRAP_ADMIN_EMAIL:'admin@example.test',BOOTSTRAP_CONTACTS_FILE:'',BOOTSTRAP_STUDENTS_FILE:'',RESEND_API_KEY:'fake',MAIL_FROM:'test@example.test',PUBLIC_ORIGIN:'https://example.test',PORTAL_INTAKE_ACTIVE:'true'};
  const store=createSqliteStore(env,{transport:async(u,o)=>{mail.push(JSON.parse(o.body));return Response.json({id:'fake'})}});
  t.after(()=>{store.close();if(!dir.startsWith(path.join(os.tmpdir(),'lpc-flow-')))throw Error('Unsafe test cleanup');fs.rmSync(dir,{recursive:true,force:true})});
  async function login(email){await store.requestCode(email);return (await store.verifyCode(email,mail.at(-1).text.match(/\b\d{8}\b/)[0])).access_token}
@@ -148,9 +148,9 @@ test('Migração: preserva membros, vínculos e integridade ao adicionar profess
 });
 
 test('Inicialização: importa uma vez, faz backup e não sobrescreve cadastro após reiniciar',async t=>{
- const {env,store,admin}=await fixture(t),{execFileSync}=await import('node:child_process');const source=path.join(env.PORTAL_DATA_DIR,'seed.csv');fs.writeFileSync(source,csv([pupil]));
- const args=['--input-type=module','--eval',"import {initializePortal} from './portal-bootstrap.mjs';await initializePortal();"],options={cwd:import.meta.dirname,env:{...process.env,...env,RENDER:'false',BOOTSTRAP_STUDENTS_FILE:source},encoding:'utf8'};
- execFileSync(process.execPath,args,options);assert.equal((await store.students()).length,1);assert.equal(fs.readdirSync(path.join(env.PORTAL_DATA_DIR,'backups')).length,1);
+ const {env,store,admin}=await fixture(t),{execFileSync}=await import('node:child_process');const source=path.join(env.PORTAL_DATA_DIR,'seed.csv'),contacts=path.join(env.PORTAL_DATA_DIR,'contacts.json');fs.writeFileSync(source,csv([pupil]));fs.writeFileSync(contacts,JSON.stringify([{id:pupil.id,guardian_name:'Responsável de teste',guardian_phone:'24999999999'}]));
+ const args=['--input-type=module','--eval',"import {initializePortal} from './portal-bootstrap.mjs';await initializePortal();"],options={cwd:import.meta.dirname,env:{...process.env,...env,RENDER:'false',BOOTSTRAP_STUDENTS_FILE:source,BOOTSTRAP_CONTACTS_FILE:contacts},encoding:'utf8'};
+ execFileSync(process.execPath,args,options);assert.equal((await store.students()).length,1);assert.equal(fs.readdirSync(path.join(env.PORTAL_DATA_DIR,'backups')).length,2);assert.equal((await store.studentContact(admin.user_id,pupil.id)).guardian_name,'Responsável de teste');
  await store.update(admin.user_id,{...pupil,name:'Nome corrigido no teste',version:1});execFileSync(process.execPath,args,options);assert.equal((await store.student(pupil.id)).name,'Nome corrigido no teste');assert.equal((await store.students()).length,1);
 });
 
