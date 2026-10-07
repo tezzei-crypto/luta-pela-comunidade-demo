@@ -23,7 +23,7 @@ $('search').addEventListener('input',renderStudents);
 let fieldSequence=0;
 function field(form,label,name,value,{type='text',readOnly=false,options,min,max,step,htmlId}={}){const id=htmlId||'field-'+name+'-'+(++fieldSequence);form.append(el('label',label,{for:id}));const input=el(options?'select':'input',undefined,{id,name,...(!options?{type}:{})});if(options)for(const [v,t]of Object.entries(options))input.append(el('option',t,{value:v}));input.value=value??'';input.readOnly=readOnly;input.disabled=readOnly&&!!options;if(min!==undefined)input.min=min;if(max!==undefined)input.max=max;if(step)input.step=step;if(type==='text')input.maxLength=160;form.append(input);return input}
 async function detail(id){
- chosen=id;const s=(await api('/students/'+id)).student,box=$('detail');box.hidden=false;box.replaceChildren(el('h2',s.name),el('p',`${s.id} · ${s.age} anos`));
+ if(typeof showPanel==='function')showPanel('students-area',{focus:false});chosen=id;const s=(await api('/students/'+id)).student,box=$('detail');box.hidden=false;box.replaceChildren(el('h2',s.name),el('p',`${s.id} · ${s.age} anos`));
  const editable=['admin','secretary','guardian'].includes(me.role),staff=['admin','secretary'].includes(me.role);
  const back=el('button','Voltar à lista de alunos',{class:'secondary'});back.addEventListener('click',()=>{$('search').scrollIntoView({behavior:'smooth',block:'start'});$('search').focus({preventScroll:true})});box.append(el('p','Núcleo: '+({UND1:'Amavale',UND2:'Valparaíso',UND3:'Vale do Carangola'}[s.id.slice(0,4)])),back);
  if(editable)await showStudentContact(id,box);
@@ -39,7 +39,7 @@ async function detail(id){
  for(const d of docs){const row=el('div',undefined,{class:'document'});row.append(el('strong',kinds[d.kind]),el('p',d.original_name+' · '+new Date(d.created_at).toLocaleString('pt-BR')));const b=el('button','Baixar arquivo',{class:'secondary'});b.addEventListener('click',action(async()=>download(await api('/documents/'+d.id+'/download',{blob:true}),'documento-'+d.id+(d.mime==='application/pdf'?'.pdf':d.mime==='image/png'?'.png':'.jpg'))));row.append(b);box.append(row)}
  if(!docs.length)box.append(el('p','Nenhum documento disponível para este acesso.'));
  if(editable){const upload=el('form');field(upload,'Categoria','kind','photo',{options:kinds});const file=field(upload,'Arquivo PDF, JPG ou PNG (até 5 MB)','file','',{type:'file'});file.accept='.pdf,.jpg,.jpeg,.png';file.required=true;upload.append(el('button','Enviar arquivo'));upload.addEventListener('submit',action(async()=>{if(file.files[0]?.size>5*1024*1024)throw Error('O limite por arquivo é 5 MB.');await api('/students/'+id+'/documents',{method:'POST',form:new FormData(upload)});await detail(id);notice('Arquivo recebido para conferência.')}));box.append(upload)}
- if(s.status==='approved'&&['admin','secretary','guardian'].includes(me.role)){const appointment=el('section'),button=el('button','Solicitar atendimento com os dados desta ficha');button.addEventListener('click',action(()=>showPrivateAppointment(id,appointment)));appointment.append(button);box.append(appointment)}box.focus({preventScroll:true});box.scrollIntoView({behavior:'smooth',block:'start'});
+ if(s.status==='approved'&&['admin','secretary','guardian'].includes(me.role)){const appointment=el('section'),button=el('button','Solicitar atendimento com os dados desta ficha');button.addEventListener('click',action(()=>showAvailableAppointments(id,appointment)));appointment.append(button);box.append(appointment)}box.focus({preventScroll:true});box.scrollIntoView({behavior:'smooth',block:'start'});
 }
 $('export').addEventListener('click',action(async()=>download(await api('/export.csv',{blob:true}),'alunos.csv')));
 $('doc-index').addEventListener('click',action(async()=>download(await api('/documents.csv',{blob:true}),'indice-documentos.csv')));
@@ -51,7 +51,7 @@ $('import-form').addEventListener('submit',action(async()=>{
 }));
 async function loadMembers(){
  const members=(await api('/members')).members;$('members').replaceChildren();$('link-user').replaceChildren();$('link-student').replaceChildren();$('member-role').replaceChildren();
- for(const r of me.role==='admin'?['guardian','secretary','psychologist','social_worker']:['guardian'])$('member-role').append(el('option',labels[r],{value:r}));
+ for(const r of me.role==='admin'?['guardian','secretary']:['guardian'])$('member-role').append(el('option',labels[r],{value:r}));
  for(const s of students)$('link-student').append(el('option',s.id+' · '+s.name,{value:s.id}));
  for(const m of members){const row=el('div',undefined,{class:'member'});row.append(el('p',m.email+' · '+labels[m.role]+(m.active?'':' · Desativado')));
   if(m.active&&['guardian','psychologist','social_worker'].includes(m.role))$('link-user').append(el('option',m.email+' · '+labels[m.role],{value:m.user_id}));
