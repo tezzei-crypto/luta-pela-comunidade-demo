@@ -1,6 +1,13 @@
 import {readFile} from 'node:fs/promises';
 const registryPath=new URL('./data/approved-students.json',import.meta.url);
-export async function loadApprovedStudents(){const data=JSON.parse(await readFile(registryPath,'utf8'));if(data.version!==1||!Array.isArray(data.students))throw Error('Invalid registry');return data.students}
+export async function loadApprovedStudents(){
+ const raw=process.env.APPROVED_STUDENTS_JSON;
+ const data=JSON.parse(raw===undefined?await readFile(registryPath,'utf8'):raw);
+ if(data.version!==1||!Array.isArray(data.students))throw Error('Invalid registry');
+ if(data.students.some(s=>!s||!/^UND[1-3]_\d{6}$/.test(s.id)||!['approved','pending','inactive'].includes(s.status)))throw Error('Invalid student');
+ if(new Set(data.students.map(s=>s.id)).size!==data.students.length)throw Error('Duplicate ID');
+ return data.students;
+}
 export async function handleAccess(request,readRegistry=loadApprovedStudents){
  const reply=(status,body)=>Response.json(body,{status,headers:{'Cache-Control':'no-store'}});
  if(request.method!=='POST')return reply(405,{message:'Método não permitido.'});
