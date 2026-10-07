@@ -1,7 +1,7 @@
-export const AGENDA_RECIPIENTS=['agenda@projetolutapelacomunidade.com.br','tezzei@gmail.com'];
+export const AGENDA_RECIPIENTS=['agenda@lutapelacomunidade.com.br','tezzei@gmail.com'];
 export const DEMO_ID='TREINO_UND1_000001';
 const fields={'Psicologia':'PSYCHOLOGIST_EMAIL','Assistência social':'SOCIAL_WORKER_EMAIL'};
-const defaultProfessionals={'Psicologia':'psicologa@projetolutapelacomunidade.com.br','Assistência social':'assistente.social@projetolutapelacomunidade.com.br'};
+const defaultProfessionals={'Psicologia':'psicologa@lutapelacomunidade.com.br','Assistência social':'assistente.social@lutapelacomunidade.com.br'};
 const professionalEmail=(env,service)=>env[fields[service]]||defaultProfessionals[service];
 const validEmail=v=>typeof v==='string'&&/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
 export function agendaStatus(env){return Object.fromEntries(Object.keys(fields).map(service=>[service,!!(env.RESEND_API_KEY&&env.MAIL_FROM&&validEmail(professionalEmail(env,service)))]))}
@@ -21,4 +21,5 @@ export async function handleAgenda(request,env={},send=fetch){
  const text=`TREINAMENTO — DADOS FICTÍCIOS\nSTATUS: AGUARDANDO CONFIRMAÇÃO DA SECRETARIA. O agendamento só estará confirmado quando a secretaria enviar a confirmação por WhatsApp ao aluno ou responsável. Este email não confirma o agendamento. Não reservar atendimento real neste exercício.\n\nAluno: Aluno Teste\nID: ${DEMO_ID}\nUnidade: Amavale\nAtendimento: ${d.service}\nData solicitada: ${d.date}\nHorário solicitado: ${d.time} (America/Sao_Paulo)\nProtocolo: ${d.requestId}\n\nEste email é um exercício autorizado pela coordenação. A ficha escolar e de saúde não é anexada. Nenhuma disponibilidade profissional foi confirmada.`;
  try{const r=await send('https://api.resend.com/emails',{method:'POST',headers:{Authorization:`Bearer ${env.RESEND_API_KEY}`,'Content-Type':'application/json','Idempotency-Key':`training-agenda-${d.requestId}`},body:JSON.stringify({from:env.MAIL_FROM,to,subject:`[TREINAMENTO] Solicitação — Aluno Teste — ${d.service} — ${d.date} ${d.time}`,text}),signal:AbortSignal.timeout(25000)});if(!r.ok||!(await r.json()).id)return reply(502,'Não foi possível confirmar o envio. Tente novamente.');return reply(200,'Email de treinamento encaminhado. Status: aguardando confirmação da secretaria por WhatsApp ao aluno ou responsável. Este exercício não reserva atendimento real.',{protocol:d.requestId})}catch{return reply(502,'Não foi possível confirmar o envio. Tente novamente.')}
 }
+
 
