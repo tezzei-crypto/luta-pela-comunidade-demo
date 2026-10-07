@@ -1,3 +1,4 @@
+import {initializePortal} from './portal-bootstrap.mjs';
 import {handleAccess} from './access-handler.mjs';
 import {handlePortal} from './portal-handler.mjs';
 import {handleMetrics} from './metrics-handler.mjs';
@@ -6,6 +7,7 @@ import {handleAgenda,agendaStatus} from './agenda-handler.mjs';
 import {handleSponsorship} from './sponsorship-handler.mjs';
 import http from 'node:http';import fs from 'node:fs';import path from 'node:path';import {fileURLToPath} from 'node:url';import {handleRegistration} from './registration-handler.mjs';
 const root=path.join(path.dirname(fileURLToPath(import.meta.url)),'dist');const port=Number(process.env.PORT||4174);const limits=new Map();
+await initializePortal(process.env);
 http.createServer(async(req,res)=>{
  const origin=new URL(process.env.PUBLIC_ORIGIN||process.env.RENDER_EXTERNAL_URL||`http://${req.headers.host}`).origin;
  let url;try{url=new URL(req.url,origin)}catch{res.writeHead(400).end();return}
@@ -43,7 +45,7 @@ http.createServer(async(req,res)=>{
   try{await send(await (url.pathname==='/api/student-access'?(request=>handleAccess(request)):['/api/agenda','/api/training-agenda'].includes(url.pathname)?handleAgenda:url.pathname==='/api/sponsorships'?handleSponsorship:handleRegistration)(new Request(url,{method:'POST',headers:req.headers,body:Buffer.concat(chunks)}),process.env))}catch{await send(Response.json({message:'Não foi possível processar a inscrição.'},{status:500}))}return;
  }
  if(!['GET','HEAD'].includes(req.method)){res.writeHead(405).end();return}
- if(url.pathname.startsWith('/portal')||url.pathname.startsWith('/administracao')){res.setHeader('Cache-Control','no-store');res.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")}
+ if(url.pathname.startsWith('/portal')||url.pathname.startsWith('/administracao')||url.pathname.startsWith('/professor')){res.setHeader('Cache-Control','no-store');res.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")}
  let file;try{file=path.resolve(root,'.'+decodeURIComponent(url.pathname))}catch{res.writeHead(400).end();return}
  if(!file.startsWith(root+path.sep)&&file!==root){res.writeHead(403).end();return}
  if(fs.existsSync(file)&&fs.statSync(file).isDirectory())file=path.join(file,'index.html');if(!fs.existsSync(file)){res.writeHead(404).end();return}

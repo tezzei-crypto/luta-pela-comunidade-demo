@@ -1,3 +1,6 @@
+import {teacherTools} from './teacher-tools.mjs';
+import {migrateMembers} from './portal-migrations.mjs';
+import {projectTools} from './project-tools.mjs';
 import {DatabaseSync,backup} from 'node:sqlite';
 import {randomUUID,randomInt,randomBytes,createHmac,createHash,timingSafeEqual} from 'node:crypto';
 import fs from 'node:fs';
@@ -7,7 +10,7 @@ import {fail,COLUMNS,validateStudent} from './portal-domain.mjs';
 
 const schema=`
 PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;
-CREATE TABLE IF NOT EXISTS members(user_id TEXT PRIMARY KEY,email TEXT UNIQUE NOT NULL,role TEXT NOT NULL CHECK(role IN ('admin','secretary','psychologist','social_worker','guardian')),active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)));
+CREATE TABLE IF NOT EXISTS members(user_id TEXT PRIMARY KEY,email TEXT UNIQUE NOT NULL,role TEXT NOT NULL CHECK(role IN ('admin','secretary','psychologist','social_worker','guardian','teacher')),active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)));
 CREATE TABLE IF NOT EXISTS students(id TEXT PRIMARY KEY,name TEXT NOT NULL,birth_date TEXT NOT NULL,status TEXT NOT NULL CHECK(status IN ('approved','pending','inactive')),height_cm REAL,weight_kg REAL,kimono TEXT NOT NULL DEFAULT '',rashguard TEXT NOT NULL DEFAULT '',shorts TEXT NOT NULL DEFAULT '',version INTEGER NOT NULL DEFAULT 1,updated_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS links(user_id TEXT NOT NULL REFERENCES members(user_id),student_id TEXT NOT NULL REFERENCES students(id),PRIMARY KEY(user_id,student_id));
 CREATE TABLE IF NOT EXISTS documents(id TEXT PRIMARY KEY,student_id TEXT NOT NULL REFERENCES students(id),kind TEXT NOT NULL,object_path TEXT UNIQUE NOT NULL,original_name TEXT NOT NULL,mime TEXT NOT NULL,size INTEGER NOT NULL,created_by TEXT NOT NULL REFERENCES members(user_id),created_at TEXT NOT NULL);
@@ -30,7 +33,7 @@ export function createSqliteStore(env,{transport=fetch}={}){
  if(!path.isAbsolute(env.PORTAL_DATA_DIR)||root===publicRoot||root.startsWith(publicRoot+path.sep)||!env.PORTAL_SECRET||env.PORTAL_SECRET.length<32)throw Error('Diretório privado ou segredo inválido.');
  if(env.RENDER==='true'&&(env.PERSISTENT_STORAGE_CONFIRMED!=='true'||!(root==='/var/data'||root.startsWith('/var/data/'))))throw Error('Configure e confirme o disco persistente /var/data antes de habilitar o portal.');
  fs.mkdirSync(root,{recursive:true,mode:0o700});const objects=path.join(root,'objects');fs.mkdirSync(objects,{recursive:true,mode:0o700});
- const db=new DatabaseSync(path.join(root,'portal.sqlite'));db.exec(schema);db.function('br_day',{deterministic:true},dayOf);
+ const db=new DatabaseSync(path.join(root,'portal.sqlite'));db.exec(schema);migrateMembers(db);db.function('br_day',{deterministic:true},dayOf);
  const get=(sql,...params)=>db.prepare(sql).get(...params),all=(sql,...params)=>db.prepare(sql).all(...params),run=(sql,...params)=>db.prepare(sql).run(...params);
  function tx(fn){db.exec('BEGIN IMMEDIATE');try{const r=fn();db.exec('COMMIT');return r}catch(e){db.exec('ROLLBACK');throw e}}
  const asMember=m=>m?{...m,active:!!m.active}:undefined;
@@ -40,6 +43,8 @@ export function createSqliteStore(env,{transport=fetch}={}){
  const documentRow=r=>{run('INSERT INTO documents(id,student_id,kind,object_path,original_name,mime,size,created_by,created_at) VALUES(?,?,?,?,?,?,?,?,?)',r.id,r.student_id,r.kind,r.object_path,r.original_name,r.mime,r.size,r.created_by,nowIso())};
  const asRegistration=r=>r?{...r,documents:JSON.parse(r.documents)}:undefined;
  function objectPath(key){if(typeof key!=='string'||!key||key.split('/').some(p=>!p||p==='.'||p==='..'||!/^[a-zA-Z0-9_.-]+$/.test(p)))fail('Arquivo inválido.');const full=path.resolve(objects,...key.split('/'));if(!full.startsWith(objects+path.sep))fail('Arquivo inválido.');return full}
+ const teaching=teacherTools({db,get,all,run,tx,requireRole,audit});
+ const project=projectTools({db,get,all,run,tx,requireRole,audit,requireUnit:teaching.requireUnit});
  const initial=env.BOOTSTRAP_ADMIN_EMAIL?.trim().toLowerCase();
  if(initial&&emailValid(initial)&&!get("SELECT user_id FROM members WHERE role='admin'")){
   if(get('SELECT user_id FROM members WHERE email=?',initial))throw Error('A conta inicial já existe sem função administrativa; confira a configuração.');
@@ -59,6 +64,7 @@ export function createSqliteStore(env,{transport=fetch}={}){
   }return rows.length;
  })}
  const api={
+  ...project,...teaching,
   close:()=>db.close(),
   async requestCode(email){
    email=email.trim().toLowerCase();if(!emailValid(email)||!get('SELECT 1 FROM members WHERE email=? AND active=1',email))return;
@@ -105,8 +111,8 @@ export function createSqliteStore(env,{transport=fetch}={}){
   }),
   setMember:async(actor,uid,role,active)=>tx(()=>{
    requireRole(actor,['admin']);const target=get('SELECT * FROM members WHERE user_id=?',uid);
-   if(actor===uid||!target||target.role==='admin'||!['guardian','secretary','psychologist','social_worker'].includes(role)||typeof active!=='boolean')fail('Conta inválida.',403);
-   run('UPDATE members SET role=?,active=? WHERE user_id=?',role,Number(active),uid);run('DELETE FROM links WHERE user_id=?',uid);run('DELETE FROM sessions WHERE user_id=?',uid);run('DELETE FROM challenges WHERE email=?',target.email);audit(actor,'member.update:'+uid);
+   if(actor===uid||!target||target.role==='admin'||!['guardian','secretary','psychologist','social_worker','teacher'].includes(role)||role==='teacher'&&target.role!=='teacher'||typeof active!=='boolean')fail('Conta inválida.',403);
+   run('UPDATE members SET role=?,active=? WHERE user_id=?',role,Number(active),uid);run('DELETE FROM links WHERE user_id=?',uid);run('DELETE FROM teacher_units WHERE user_id=?',uid);run("UPDATE teacher_profiles SET status='pending',version=version+1 WHERE user_id=?",uid);run('DELETE FROM sessions WHERE user_id=?',uid);run('DELETE FROM challenges WHERE email=?',target.email);audit(actor,'member.update:'+uid);
   }),
   registrations:async(status,offset=0)=>all('SELECT id,student_name,birth_date,unit,status,student_id,version,created_at FROM registrations WHERE status=? ORDER BY created_at,id LIMIT 51 OFFSET ?',status,offset),
   registration:async id=>asRegistration(get('SELECT * FROM registrations WHERE id=?',id)),
@@ -130,6 +136,7 @@ export function createSqliteStore(env,{transport=fetch}={}){
      sid=prefix+String(next).padStart(6,'0');const newRow=validateStudent({id:sid,name:r.student_name,birth_date:r.birth_date,status:'approved',version:0});
      run('INSERT INTO students(id,name,birth_date,status,updated_at) VALUES(?,?,?,?,?)',sid,newRow.name,newRow.birth_date,'approved',nowIso());
     }
+    project.approvedContact({...r,student_id:sid},actor);
     for(const d of r.documents)documentRow({...d,student_id:sid,created_by:actor});
    }
    run('UPDATE registrations SET status=?,reason=?,student_id=?,version=version+1,reviewed_by=?,reviewed_at=? WHERE id=?',p.decision,p.reason.trim(),sid,actor,nowIso(),id);audit(actor,'registration.'+p.decision+':'+id,sid);return {student_id:sid,status:p.decision};

@@ -23,3 +23,8 @@ Importe o CSV inicial no portal ou com node portal-maintenance.mjs import /camin
 node portal-maintenance.mjs backup cria cópia consistente do SQLite. Uma recuperação completa também exige copiar a pasta privada objects/ e guardar o segredo em destino seguro externo ao disco. Teste a restauração. Validação de formato não equivale a antivírus. Aprovação documental, vínculos e confirmação de horários dependem da equipe.
 
 render.yaml serve como referência para configurar o serviço existente; não crie outro serviço acidentalmente. Não envie bancos, CSV de alunos, documentos ou arquivos .env ao GitHub.
+
+
+## Professores e ocorrências
+
+Área `/professor/`, cadastro e conferência pela administração. Professores atuam somente nos núcleos autorizados, com chamada e relatos privados. A habilitação requer foto e diploma conferidos. Cada novo documento retorna a situação para conferência. Relatos originais são preservados; complementos, encerramento e reabertura geram histórico. CSV administrativo dos relatos inclui `updates_json`.

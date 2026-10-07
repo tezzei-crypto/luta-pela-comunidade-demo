@@ -1,7 +1,7 @@
 import {createHmac,timingSafeEqual} from 'node:crypto';
 export const COLUMNS=['id','name','birth_date','status','height_cm','weight_kg','kimono','rashguard','shorts','version'];
 export const KINDS={photo:'Foto',student_document:'Documento do aluno',guardian_document:'Documento do responsável',consent:'Autorização',report_card:'Boletim escolar',medical_certificate:'Atestado médico'};
-export const ROLES=['admin','secretary','psychologist','social_worker','guardian'];
+export const ROLES=['admin','secretary','psychologist','social_worker','guardian','teacher'];
 export function fail(message,status=400){throw Object.assign(new Error(message),{status})}
 export function ageAt(birth,now=new Date()){
  const p=Object.fromEntries(new Intl.DateTimeFormat('en-US',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(now).map(p=>[p.type,p.value]));
@@ -44,7 +44,7 @@ export function csv(rows,cols=COLUMNS){
  const quote=v=>{let s=v===null||v===undefined?'':String(v);if(/^[\s]*[=+@-]/.test(s)||/^[\t\r\n]/.test(s))s="'"+s;return '"'+s.replace(/"/g,'""')+'"'};
  return '\uFEFF'+[cols,...rows.map(r=>cols.map(c=>r[c]))].map(r=>r.map(quote).join(';')).join('\r\n')+'\r\n';
 }
-export function canRead(role,linked){return ['admin','secretary'].includes(role)||linked}
+export function canRead(role,linked){return role!=='teacher'&&(['admin','secretary'].includes(role)||linked)}
 export function canEdit(role){return ['admin','secretary','guardian'].includes(role)}
 export function canDocument(role,kind){return ['admin','secretary','guardian'].includes(role)||(role==='psychologist'&&['photo','report_card','medical_certificate'].includes(kind))||(role==='social_worker'&&['photo','report_card','consent'].includes(kind))}
 export function fileType(bytes){if(bytes.subarray(0,5).toString()==='%PDF-')return ['application/pdf','pdf'];if(bytes[0]===255&&bytes[1]===216&&bytes[2]===255)return ['image/jpeg','jpg'];if(bytes.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])))return ['image/png','png'];fail('Use PDF, JPG ou PNG. O conteúdo do arquivo não corresponde a um formato aceito.');}

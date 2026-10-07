@@ -1,3 +1,5 @@
+import {handleTeaching} from './teacher-handler.mjs';
+import {handleAgenda} from './agenda-handler.mjs';
 import {randomUUID} from 'node:crypto';
 import {createStore,portalConfigured} from './portal-store.mjs';
 import {metricsEnabled} from './metrics-handler.mjs';
@@ -47,6 +49,7 @@ export async function handlePortal(req,env=process.env,injectedStore){
   const roster=async()=>staff?store.students():linked.length?store.students(linked):[];
   if(route==='/auth/verify'&&method==='POST')return json({access_token:session.access_token,expires_in:session.expires_in,role,email:member.email});
   if(route==='/me'&&method==='GET')return json({role,email:member.email,user_id:actor});
+  const teaching=await handleTeaching({route,method,req,url,store,actor});if(teaching)return teaching;
   if(route==='/dashboard'&&method==='GET'){
    requireRole('admin','secretary');const days=Number(url.searchParams.get('days')||30);if(![7,30,90].includes(days))fail('Período inválido.');
    const result=await store.dashboard(actor,days);
@@ -81,6 +84,25 @@ export async function handlePortal(req,env=process.env,injectedStore){
     const response=await store.download(d.object_path);return new Response(response.body,{headers:{...privateHeaders,'Content-Type':d.mime,'Content-Disposition':`attachment; filename="inscricao-${d.id}.${d.mime==='application/pdf'?'pdf':d.mime==='image/png'?'png':'jpg'}"`}});
    }
   }
+  if(route==='/classes'&&method==='GET'){requireRole('admin','secretary','teacher');return json({classes:await store.classes(actor,url.searchParams.get('unit'))})}
+  if(route==='/classes'&&method==='POST'){requireRole('admin','secretary','teacher');return json({lesson:await store.createClass(actor,await body())},201)}
+  if(route==='/attendance.csv'&&method==='GET'){
+   requireRole('admin','secretary','teacher');const rows=await store.attendanceExport(actor,url.searchParams.get('unit'),url.searchParams.get('from'),url.searchParams.get('to'));
+   return new Response(csv(rows,['date','time','class','unit','student_id','name','status','version','updated_at']),{headers:{...privateHeaders,'Content-Type':'text/csv; charset=utf-8','Content-Disposition':'attachment; filename="presencas.csv"'}});
+  }
+  const classMatch=route.match(/^\/classes\/([0-9a-f-]+)\/attendance$/i);
+  if(classMatch){requireRole('admin','secretary','teacher');if(!uuid(classMatch[1]))fail('Aula inválida.');if(method==='GET')return json(await store.attendance(actor,classMatch[1]));if(method==='POST'){await store.markAttendance(actor,classMatch[1],(await body()).rows);return json({message:'Chamada salva.'})}}
+  const appointmentMatch=route.match(/^\/students\/(UND[1-3]_\d{6})\/appointment$/);
+  if(appointmentMatch){
+   requireRole('admin','secretary','guardian');const context=await store.appointmentContext(actor,appointmentMatch[1]);
+   if(method==='GET')return json({student:{id:context.student.id,name:context.student.name,age:ageAt(context.student.birth_date)},contact:context.contact});
+   if(method==='POST'){
+    const p=await body();const internal=new Request(url.origin+'/api/agenda',{method:'POST',headers:{origin:req.headers.get('origin'),'Content-Type':'application/json'},body:JSON.stringify({...p,studentId:context.student.id})});
+    const result=await handleAgenda(internal,env,fetch,async()=>[{id:context.student.id,status:context.student.status}],context.student);
+    if(result.ok)await store.audit(actor,'appointment.request',context.student.id);return result;
+   }
+  }
+  if(route==='/students'&&method==='GET'&&role==='teacher')return json({students:[]});
   if(route==='/students'&&method==='GET')return json({students:(await roster()).map(r=>({...clean(r),age:ageAt(r.birth_date)}))});
   let match=route.match(/^\/students\/(UND[1-3]_\d{6})(\/documents)?$/);
   if(match){
@@ -124,9 +146,11 @@ export async function handlePortal(req,env=process.env,injectedStore){
    return new Response(response.body,{headers:{...privateHeaders,'Content-Type':d.mime,'Content-Disposition':`attachment; filename="documento-${d.id}.${d.mime==='application/pdf'?'pdf':d.mime==='image/png'?'png':'jpg'}"`}});
   }
   if(route==='/export.csv'&&method==='GET'){
+   if(role==='teacher')fail('Use a exportação de presenças do núcleo.',403);
    const rows=await roster();await store.audit(actor,'csv.export');return new Response(csv(rows),{headers:{...privateHeaders,'Content-Type':'text/csv; charset=utf-8','Content-Disposition':'attachment; filename="alunos.csv"'}});
   }
   if(route==='/documents.csv'&&method==='GET'){
+   if(role==='teacher')fail('Acesso não permitido.',403);
    const rows=[];for(const r of await roster())for(const d of await store.documents(r.id))if(canDocument(role,d.kind))rows.push({student_id:r.id,document_id:d.id,kind:KINDS[d.kind],name:d.original_name,created_at:d.created_at});
    await store.audit(actor,'documents.export');return new Response(csv(rows,['student_id','document_id','kind','name','created_at']),{headers:{...privateHeaders,'Content-Type':'text/csv; charset=utf-8','Content-Disposition':'attachment; filename="indice-documentos.csv"'}});
   }
@@ -158,7 +182,7 @@ export async function handlePortal(req,env=process.env,injectedStore){
   match=route.match(/^\/members\/([0-9a-f-]+)$/i);
   if(match&&method==='PATCH'){
    requireRole('admin');if(!uuid(match[1])||match[1]===actor)fail('Não é possível alterar a própria conta.');
-   const {role:newRole,active}=await body();if(!['secretary','psychologist','social_worker','guardian'].includes(newRole)||typeof active!=='boolean')fail('Conta inválida.');
+   const {role:newRole,active}=await body();if(!['secretary','psychologist','social_worker','guardian','teacher'].includes(newRole)||typeof active!=='boolean')fail('Conta inválida.');
    await store.setMember(actor,match[1],newRole,active);return json({message:'Conta atualizada. Os vínculos anteriores foram removidos; vincule novamente se necessário.'});
   }
   return json({message:'Operação não encontrada.'},404);

@@ -61,3 +61,95 @@ test('Servidor HTTP: páginas, scripts e privacidade dos arquivos internos',asyn
  assert.deepEqual(await (await fetch(base+'/api/health')).json(),{ok:true});assert.equal((await fetch(base+'/api/portal/students')).status,503);
  child.kill();await once(child,'exit');
 });
+
+test('Chamada: aula única, estados explícitos, conflito de versão e CSV',async t=>{
+ const {request,store,admin}=await fixture(t);await store.import(admin.user_id,[pupil]);
+ const data={unit:'amavale',day:'2020-01-01',time:'18:00',label:'Jiu-Jitsu de teste'};
+ const lesson=(await (await request('/classes',{method:'POST',data})).json()).lesson;
+ assert.equal((await (await request('/classes',{method:'POST',data})).json()).lesson.id,lesson.id);
+ const route='/classes/'+lesson.id+'/attendance';let rows=(await (await request(route)).json()).students;assert.equal(rows[0].status,'unmarked');
+ assert.equal((await request(route,{method:'POST',data:{rows:[{id:pupil.id,status:'present',version:0}]}})).status,200);
+ assert.equal((await request(route,{method:'POST',data:{rows:[{id:pupil.id,status:'absent',version:0}]}})).status,409);
+ assert.equal((await request(route,{method:'POST',data:{rows:[{id:pupil.id,status:'justified',version:1}]}})).status,200);
+ const exported=await request('/attendance.csv?unit=amavale&from=2020-01-01&to=2020-12-31');assert.equal(exported.status,200);assert.match(await exported.text(),/justified/);
+ rows=(await (await request(route)).json()).students;assert.equal(rows[0].version,2);assert.equal(rows[0].status,'justified');
+});
+test('Chamada: bloqueia outra unidade, data futura e responsáveis',async t=>{
+ const {request,store,admin,login}=await fixture(t);await store.import(admin.user_id,[pupil,{...pupil,id:'UND2_000001'}]);
+ const lesson=(await (await request('/classes',{method:'POST',data:{unit:'amavale',day:'2020-01-01',time:'18:00',label:'Aula teste'}})).json()).lesson;
+ const route='/classes/'+lesson.id+'/attendance';assert.equal((await request(route,{method:'POST',data:{rows:[{id:'UND2_000001',status:'present',version:0}]}})).status,403);
+ const future=(await (await request('/classes',{method:'POST',data:{unit:'amavale',day:'2099-01-01',time:'18:00',label:'Aula futura'}})).json()).lesson;
+ assert.equal((await request('/classes/'+future.id+'/attendance',{method:'POST',data:{rows:[{id:pupil.id,status:'present',version:0}]}})).status,400);
+ await store.provision('guardian@example.test','guardian');const token=await login('guardian@example.test');assert.equal((await request(route,{token})).status,403);assert.equal((await request('/classes?unit=amavale',{token})).status,403);
+});
+test('Aprovação: email do responsável recebe vínculo e agendamento preenchido privado',async t=>{
+ const {request,store,admin,login}=await fixture(t);const id=randomUUID();await store.receiveRegistration({id,payload_hash:'test',student_name:pupil.name,birth_date:pupil.birth_date,unit:'amavale',guardian_name:'Responsável Fictício',guardian_email:'guardian@example.test',guardian_phone:'24999999999',relationship:'Pai',consent_version:'test',documents:[]});
+ await store.reviewRegistration(admin.user_id,id,{version:1,decision:'approved',reason:'',checked:true});const token=await login('guardian@example.test');
+ const result=await request('/students/UND1_000001/appointment',{token});assert.equal(result.status,200);const data=await result.json();assert.equal(data.student.name,pupil.name);assert.equal(data.contact.guardian_name,'Responsável Fictício');assert.equal(data.contact.guardian_phone,'24999999999');
+ assert.equal((await request('/students/UND1_000002/appointment',{token})).status,403);
+ await store.update(admin.user_id,{...pupil,version:1,status:'inactive'});assert.equal((await request('/students/UND1_000001/appointment',{token})).status,403);
+});
+
+const teacherData={name:'Professor Fictício',email:'teacher@example.test',phone:'24999999999',belt_degree:'Preta, 2º grau',certificate_issuer:'Entidade de teste',certificate_date:'2010-01-01',first_aid_until:'',availability:'Segundas',notes:'Teste fictício',units:['amavale'],status:'pending',version:0};
+async function readyTeacher(request,email=teacherData.email){
+ const created=await request('/teachers',{method:'POST',data:{...teacherData,email}});assert.equal(created.status,201);let teacher=(await created.json()).teacher;
+ for(const kind of ['photo','black_belt_diploma']){const form=new FormData();form.set('kind',kind);form.set('file',kind==='photo'?new Blob([new Uint8Array([255,216,255,0])],{type:'image/jpeg'}):new Blob(['%PDF-1.7 teste'],{type:'application/pdf'}),kind==='photo'?'foto.jpg':'diploma.pdf');assert.equal((await request('/teachers/'+teacher.user_id+'/documents',{method:'POST',form})).status,201)}
+ teacher=(await (await request('/teachers/'+teacher.user_id)).json()).teacher;
+ const approved=await request('/teachers/'+teacher.user_id,{method:'PATCH',data:{...teacherData,email,version:teacher.version,status:'verified',checked:true}});assert.equal(approved.status,200);return (await approved.json()).teacher;
+}
+test('Professor: aprovação documental, unidades limitadas e nenhuma ficha privada',async t=>{
+ const {request,store,admin,login}=await fixture(t);await store.import(admin.user_id,[pupil,{...pupil,id:'UND2_000001'}]);
+ const teacher=await readyTeacher(request),token=await login(teacher.email);
+ assert.deepEqual((await (await request('/units',{token})).json()).units,['amavale']);
+ const roster=(await (await request('/unit-roster?unit=amavale',{token})).json()).students;assert.equal(roster.length,1);assert.equal(roster[0].birth_date,undefined);assert.equal(roster[0].name,pupil.name);
+ for(const route of ['/unit-roster?unit=valparaiso','/students/'+pupil.id,'/export.csv','/documents.csv','/registrations','/audit','/dashboard'])assert.equal((await request(route,{token})).status,403,route);
+ assert.equal((await request('/classes',{token,method:'POST',data:{unit:'valparaiso',day:'2020-01-01',time:'18:00',label:'Aula'}})).status,403);
+ const lesson=(await (await request('/classes',{token,method:'POST',data:{unit:'amavale',day:'2020-01-01',time:'18:00',label:'Aula'}})).json()).lesson;
+ assert.equal((await request('/classes/'+lesson.id+'/attendance',{token,method:'POST',data:{rows:[{id:pupil.id,status:'present',version:0}]}})).status,200);
+ const other=(await (await request('/classes',{method:'POST',data:{unit:'valparaiso',day:'2020-01-01',time:'18:00',label:'Aula'}})).json()).lesson;
+ assert.equal((await request('/classes/'+other.id+'/attendance',{token})).status,403);
+ assert.equal((await request('/teachers',{token,method:'POST',data:{...teacherData,email:'x@example.test'}})).status,403);
+ assert.equal((await request('/members/'+teacher.user_id,{method:'PATCH',data:{role:'teacher',active:false}})).status,200);assert.equal((await request('/units',{token})).status,401);
+});
+test('Professor: documentos obrigatórios, versão otimista e reconferência após upload',async t=>{
+ const {request,login}=await fixture(t);const r=await request('/teachers',{method:'POST',data:{...teacherData,status:'verified',checked:true}});assert.equal(r.status,400);
+ let teacher=(await (await request('/teachers',{method:'POST',data:teacherData})).json()).teacher,token=await login(teacher.email);
+ assert.deepEqual((await (await request('/units',{token})).json()).units,[]);
+ assert.equal((await request('/teachers/'+teacher.user_id,{method:'PATCH',data:{...teacherData,version:1,status:'verified',checked:true}})).status,400);
+ assert.equal((await request('/teachers/'+teacher.user_id,{method:'PATCH',data:{...teacherData,version:0}})).status,409);
+ const ready=await readyTeacher(request,'second@example.test');const secondToken=await login(ready.email);
+ assert.equal((await request('/teachers/'+teacher.user_id+'/documents',{token:secondToken})).status,403);
+ const form=new FormData();form.set('kind','black_belt_diploma');form.set('file',new Blob(['%PDF-1.7 new'],{type:'application/pdf'}),'novo.pdf');const uploaded=await request('/teachers/'+ready.user_id+'/documents',{token:secondToken,method:'POST',form});assert.equal(uploaded.status,201);
+ const doc=(await uploaded.json()).id;assert.equal((await request('/teacher-documents/'+doc+'/download',{token})).status,403);assert.equal((await request('/teacher-documents/'+doc+'/download',{token:secondToken})).status,200);
+ assert.deepEqual((await (await request('/units',{token:secondToken})).json()).units,[]);
+ const documents=(await (await request('/teachers/'+ready.user_id+'/documents')).json()).documents;assert.equal(documents[0].object_path,undefined);
+});
+test('Relatos: protocolo idempotente, lesão vinculada, histórico e privacidade',async t=>{
+ const {request,store,admin,login}=await fixture(t);await store.import(admin.user_id,[pupil,{...pupil,id:'UND2_000001'}]);const teacher=await readyTeacher(request),token=await login(teacher.email);
+ const incident={id:randomUUID(),kind:'incident',unit:'amavale',occurred_at:'2020-01-01T18:30',category:'Iluminação',description:'A luz apagou durante a aula de teste.',actions:'Aula interrompida e coordenação avisada.'};
+ assert.equal((await request('/reports',{token,method:'POST',data:incident})).status,201);assert.equal((await request('/reports',{token,method:'POST',data:incident})).status,201);
+ assert.equal((await request('/reports',{token,method:'POST',data:{...incident,description:'Outro texto para mesmo protocolo'}})).status,409);
+ assert.equal((await (await request('/reports?unit=amavale',{token})).json()).reports.length,1);
+ assert.equal((await request('/reports/'+incident.id,{token,method:'POST',data:{version:1,note:'Tentativa de encerrar sozinho.',status:'closed'}})).status,403);
+ assert.equal((await request('/reports/'+incident.id,{token,method:'POST',data:{version:1,note:'Coordenação informada às 18:40.',status:'open'}})).status,200);
+ assert.equal((await request('/reports/'+incident.id,{method:'POST',data:{version:1,note:'Versão desatualizada.',status:'closed'}})).status,409);
+ assert.equal((await request('/reports/'+incident.id,{method:'POST',data:{version:2,note:'Iluminação restabelecida e conferida.',status:'closed'}})).status,200);
+ const saved=(await (await request('/reports/'+incident.id,{token})).json()).report;assert.equal(saved.description,incident.description);assert.equal(saved.updates.length,2);assert.equal(saved.request_hash,undefined);
+ const injury={...incident,id:randomUUID(),kind:'injury',student_id:pupil.id,category:'Joelho',description:'Aluno informou dor após movimento. Teste fictício.',actions:'Atividade interrompida; responsável chamado.',guardian_contact:'Responsável informado pela equipe às 18:40.',referral:'Encaminhado para avaliação pelo responsável.'};assert.equal((await request('/reports',{token,method:'POST',data:injury})).status,201);
+ assert.equal((await request('/reports',{token,method:'POST',data:{...injury,id:randomUUID(),student_id:'UND2_000001'}})).status,403);
+ assert.equal((await request('/reports',{token,method:'POST',data:{...injury,id:randomUUID(),occurred_at:'2099-01-01T18:30'}})).status,400);
+ const second=await readyTeacher(request,'second@example.test'),secondToken=await login(second.email);assert.equal((await request('/reports/'+injury.id,{token:secondToken})).status,403);
+ assert.equal((await request('/reports.csv?unit=amavale',{token})).status,403);const exported=await request('/reports.csv?unit=amavale');assert.equal(exported.status,200);assert.match(await exported.text(),/Joelho/);
+ await store.provision('guardian@example.test','guardian');const guardianToken=await login('guardian@example.test');assert.equal((await request('/reports/'+injury.id,{token:guardianToken})).status,403);
+});
+test('Migração: preserva membros, vínculos e integridade ao adicionar professor',async()=>{
+ const {DatabaseSync}=await import('node:sqlite'),{migrateMembers}=await import('./portal-migrations.mjs');const db=new DatabaseSync(':memory:');
+ try{db.exec(`PRAGMA foreign_keys=ON;CREATE TABLE members(user_id TEXT PRIMARY KEY,email TEXT UNIQUE NOT NULL,role TEXT NOT NULL CHECK(role IN ('admin','guardian')),active INTEGER NOT NULL DEFAULT 1);CREATE TABLE sample(user_id TEXT REFERENCES members(user_id));INSERT INTO members VALUES('a','a@example.test','admin',1);INSERT INTO sample VALUES('a');`);migrateMembers(db);migrateMembers(db);db.prepare('INSERT INTO members VALUES(?,?,?,?)').run('t','t@example.test','teacher',1);assert.equal(db.prepare('SELECT count(*) AS n FROM sample JOIN members USING(user_id)').get().n,1);assert.equal(db.prepare('PRAGMA foreign_key_check').all().length,0);assert.equal(db.prepare('PRAGMA foreign_keys').get().foreign_keys,1)}finally{db.close()}
+});
+
+test('Inicialização: importa uma vez, faz backup e não sobrescreve cadastro após reiniciar',async t=>{
+ const {env,store,admin}=await fixture(t),{execFileSync}=await import('node:child_process');const source=path.join(env.PORTAL_DATA_DIR,'seed.csv');fs.writeFileSync(source,csv([pupil]));
+ const args=['--input-type=module','--eval',"import {initializePortal} from './portal-bootstrap.mjs';await initializePortal();"],options={cwd:import.meta.dirname,env:{...process.env,...env,RENDER:'false',BOOTSTRAP_STUDENTS_FILE:source},encoding:'utf8'};
+ execFileSync(process.execPath,args,options);assert.equal((await store.students()).length,1);assert.equal(fs.readdirSync(path.join(env.PORTAL_DATA_DIR,'backups')).length,1);
+ await store.update(admin.user_id,{...pupil,name:'Nome corrigido no teste',version:1});execFileSync(process.execPath,args,options);assert.equal((await store.student(pupil.id)).name,'Nome corrigido no teste');assert.equal((await store.students()).length,1);
+});
