@@ -1,3 +1,4 @@
+import {studentDetails} from './student-details.mjs';
 import {teacherTools} from './teacher-tools.mjs';
 import {migrateMembers} from './portal-migrations.mjs';
 import {projectTools} from './project-tools.mjs';
@@ -55,6 +56,7 @@ export function createSqliteStore(env,{transport=fetch}={}){
   const seen=new Set();
   for(const raw of rows){const r=validateStudent(raw);if(seen.has(r.id))fail('ID repetido no lote.');seen.add(r.id);
    const old=get('SELECT * FROM students WHERE id=?',r.id);
+   if(m.role==='secretary'&&(!old||r.status!==old.status))fail('Somente a administração altera a aprovação.',403);
    if(m.role==='guardian'&&(!old||!get('SELECT 1 FROM links WHERE user_id=? AND student_id=?',actor,r.id)||['name','birth_date','status'].some(k=>r[k]!==old[k])))fail('Acesso não permitido.',403);
    if((old?.version||0)!==r.version)fail('Ficha alterada. Recarregue ou exporte um CSV atualizado.',409);
    const row={height_cm:null,weight_kg:null,kimono:'',rashguard:'',shorts:'',...r,version:r.version+1,updated_at:nowIso()};
@@ -64,7 +66,7 @@ export function createSqliteStore(env,{transport=fetch}={}){
   }return rows.length;
  })}
  const api={
-  ...project,...teaching,
+  ...project,...teaching,...studentDetails({db,get,all,run,tx,requireRole,audit}),
   close:()=>db.close(),
   async requestCode(email){
    email=email.trim().toLowerCase();if(!emailValid(email)||!get('SELECT 1 FROM members WHERE email=? AND active=1',email))return;
@@ -122,7 +124,7 @@ export function createSqliteStore(env,{transport=fetch}={}){
    const r={...row,documents:JSON.stringify(row.documents),created_at:nowIso()};run('INSERT INTO registrations('+columns.join(',')+') VALUES('+columns.map(()=>'?').join(',')+')',...columns.map(k=>r[k]));return row;
   }),
   reviewRegistration:async(actor,id,p)=>tx(()=>{
-   requireRole(actor,['admin','secretary']);const r=asRegistration(get('SELECT * FROM registrations WHERE id=?',id));
+   const reviewer=requireRole(actor,['admin','secretary']);if(p.decision==='approved'&&reviewer.role!=='admin')fail('Somente o administrador pode aprovar candidatos.',403);const r=asRegistration(get('SELECT * FROM registrations WHERE id=?',id));
    if(!r)fail('Inscrição não localizada.',404);if(r.version!==p.version||r.status==='approved')fail('Inscrição alterada. Recarregue antes de decidir.',409);
    if(!['approved','needs_info','rejected'].includes(p.decision)||typeof p.reason!=='string'||p.reason.length>500||p.decision!=='approved'&&p.reason.trim().length<5)fail('Decisão inválida.');
    let sid=null;
