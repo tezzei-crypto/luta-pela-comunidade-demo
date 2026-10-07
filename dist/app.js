@@ -30,3 +30,7 @@ document.addEventListener('click',e=>{if(!siteHeader.contains(e.target))closeNav
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&siteHeader.classList.contains('nav-open')){closeNavigation();navButton.focus()}});
 const desktopLayout=matchMedia('(min-width:1101px)');
 desktopLayout.addEventListener('change',()=>{closeNavigation();closeUnits()});
+const metricsScript=document.createElement('script');metricsScript.src='/metrics.js';metricsScript.defer=true;document.head.append(metricsScript);
+const staffLink=document.createElement('a');staffLink.href='/administracao/';staffLink.textContent='Área da equipe';staffLink.className='text-link';document.querySelector('footer')?.append(staffLink);
+
+const teacherLink=document.createElement('a');teacherLink.href='/professor/';teacherLink.textContent='Área do professor';teacherLink.className='text-link';document.querySelector('footer')?.append(teacherLink);

@@ -1,15 +1,30 @@
-# Luta pela Comunidade — demonstração no Render
+# Luta pela Comunidade
 
-Pacote preparado para demonstração pública com dados fictícios. Não contém alunos reais, planilhas, documentos ou credenciais. O índice data/approved-students.json está vazio; não adicionar dados reais a este repositório.
+Site público e portal privado em HTML, CSS e JavaScript, com Node.js 24 e SQLite. O código público não contém dados de alunos, documentos ou credenciais.
 
-## Render
-Web Service; Language Node; Build Command: node --check server.mjs; Start Command: node server.mjs; Instance Type: Free; Root Directory vazio quando estes arquivos estiverem na raiz do repositório.
+## Execução e verificação
 
-O servidor usa PORT e escuta em 0.0.0.0. RENDER_EXTERNAL_URL define a origem HTTPS esperada pelo servidor. Domínio personalizado: configurar PUBLIC_ORIGIN com sua origem HTTPS exata. Não é necessário informar IP externo.
+- Build: npm test
+- Start: node server.mjs
+- Health check: /api/health
+- Administração: /administracao/
+- Ficha do aluno/responsável: /portal/
 
-## Teste
-Acesse /agendamento/ e digite TREINO_UND1_000001. A ficha fictícia abre na mesma página. As solicitações simuladas não enviam email. A secretaria confirma atendimentos por WhatsApp; o treinamento não marca atendimento real.
+## Armazenamento privado no Render
 
-Sem RESEND_API_KEY e MAIL_FROM, os envios permanecem indisponíveis. Não coloque senhas no GitHub. O banco persistente e a autenticação dos responsáveis ainda não estão implementados. O arquivo de cadastro local não serve para produção no plano gratuito.
+Requer serviço pago com disco persistente montado em /var/data. Configure PORTAL_DATA_DIR=/var/data/luta, PERSISTENT_STORAGE_CONFIRMED=true, PORTAL_SECRET com pelo menos 32 caracteres aleatórios, BOOTSTRAP_ADMIN_EMAIL e PUBLIC_ORIGIN. Configure RESEND_API_KEY e MAIL_FROM para os códigos de acesso e notificações. Nunca grave os valores secretos no repositório.
 
-O Render pode pausar serviços gratuitos após inatividade. Uma primeira visita pode levar algum tempo. Consulte https://render.com/docs/free.
+O administrador inicial entra por código de uso único enviado ao email configurado. Responsáveis e profissionais só acessam alunos vinculados pela equipe. IDs públicos não autenticam uma pessoa nem expõem nomes e documentos.
+
+Importe o CSV inicial no portal ou com node portal-maintenance.mjs import /caminho/privado/alunos.csv. Preserve os IDs existentes. Ative PORTAL_REGISTRY_ACTIVE=true somente depois da conferência da importação. PORTAL_INTAKE_ACTIVE=true grava novas inscrições e arquivos no disco privado. METRICS_ENABLED=true oferece estatísticas opcionais nas páginas públicas, com consentimento.
+
+## Backup e limites
+
+node portal-maintenance.mjs backup cria cópia consistente do SQLite. Uma recuperação completa também exige copiar a pasta privada objects/ e guardar o segredo em destino seguro externo ao disco. Teste a restauração. Validação de formato não equivale a antivírus. Aprovação documental, vínculos e confirmação de horários dependem da equipe.
+
+render.yaml serve como referência para configurar o serviço existente; não crie outro serviço acidentalmente. Não envie bancos, CSV de alunos, documentos ou arquivos .env ao GitHub.
+
+
+## Professores e ocorrências
+
+Área `/professor/`, cadastro e conferência pela administração. Professores atuam somente nos núcleos autorizados, com chamada e relatos privados. A habilitação requer foto e diploma conferidos. Cada novo documento retorna a situação para conferência. Relatos originais são preservados; complementos, encerramento e reabertura geram histórico. CSV administrativo dos relatos inclui `updates_json`.

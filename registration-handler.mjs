@@ -1,3 +1,5 @@
+import {createStore} from './portal-store.mjs';
+import {persistRegistration} from './registration-persistence.mjs';
 export const RECIPIENTS=['participante@lutapelacomunidade.com.br','tezzei@gmail.com'];
 const UNITS={amavale:'Amavale',valparaiso:'Valparaíso','vale-do-carangola':'Vale do Carangola'};
 const FILES={studentDocument:'Documento do aluno',guardianDocument:'Documento do responsável',medicalCertificate:'Atestado médico',photo:'Foto de registro'};
@@ -11,11 +13,11 @@ export function ageAt(birthDate,now=new Date()){
 }
 function reply(status,message,extra={}){return Response.json({message,...extra},{status,headers:{'Cache-Control':'no-store'}})}
 function fileKind(bytes){if(bytes[0]===0x25&&bytes[1]===0x50&&bytes[2]===0x44&&bytes[3]===0x46&&bytes[4]===0x2d)return 'pdf';if(bytes[0]===0xff&&bytes[1]===0xd8&&bytes[2]===0xff)return 'jpg';if([137,80,78,71,13,10,26,10].every((v,i)=>bytes[i]===v))return 'png';return null}
-export async function handleRegistration(request,env={},send=fetch){
+export async function handleRegistration(request,env={},send=fetch,injectedStore){
  if(request.method!=='POST')return reply(405,'Método não permitido.');
  const origin=request.headers.get('origin');
  if(!origin||origin!==new URL(request.url).origin)return reply(403,'Origem não permitida.');
- if(!env.RESEND_API_KEY||!env.MAIL_FROM)return reply(503,'O serviço de envio está temporariamente indisponível. Entre em contato com participante@lutapelacomunidade.com.br.');
+ if(env.PORTAL_INTAKE_ACTIVE!=='true'&&(!env.RESEND_API_KEY||!env.MAIL_FROM))return reply(503,'O serviço de envio está temporariamente indisponível. Entre em contato com participante@lutapelacomunidade.com.br.');
  if(!request.headers.get('content-type')?.startsWith('multipart/form-data'))return reply(415,'Formato de envio inválido.');
  if(Number(request.headers.get('content-length'))>13*1024*1024)return reply(413,'O envio deve ter até 12 MB em arquivos.');
  let data;try{data=await request.formData()}catch{return reply(400,'Não foi possível ler os dados enviados.')}
@@ -36,6 +38,14 @@ export async function handleRegistration(request,env={},send=fetch){
   const bytes=new Uint8Array(await file.arrayBuffer()),kind=fileKind(bytes);
   if(!kind||(key==='photo'&&kind==='pdf'))return reply(400,`${label}: formato não permitido. Use ${key==='photo'?'JPG ou PNG':'PDF, JPG ou PNG'}.`);
   attachments.push({filename:`${key}.${kind}`,content:Buffer.from(bytes).toString('base64')});
+ }
+ if(env.PORTAL_INTAKE_ACTIVE==='true'){
+  try{
+   await persistRegistration(injectedStore||createStore(env),{id,student_name:student,birth_date:birth,unit:get('unit'),guardian_name:guardian,guardian_email:email,guardian_phone:phone,relationship},attachments);
+   // O registro privado é a confirmação principal; email é somente um aviso, sem anexos.
+   if(env.RESEND_API_KEY&&env.MAIL_FROM)await send('https://api.resend.com/emails',{method:'POST',headers:{Authorization:`Bearer ${env.RESEND_API_KEY}`,'Content-Type':'application/json','Idempotency-Key':`registration-private-${id}`},body:JSON.stringify({from:env.MAIL_FROM,to:RECIPIENTS,subject:'Nova inscrição para análise — Luta pela Comunidade',text:`Uma nova inscrição foi recebida no painel administrativo. Protocolo: ${id}. Entre na área de administração do site para conferir os documentos e decidir sobre a aprovação.`}),signal:AbortSignal.timeout(15000)}).catch(()=>{});
+   return reply(200,'Inscrição recebida no painel da coordenação. Aguarde a análise dos documentos e o contato da equipe. O recebimento não garante vaga.',{protocol:id});
+  }catch(error){return reply(error.status===409?409:503,error.status===409?error.message:'Não foi possível confirmar o registro. Seus campos foram preservados; tente novamente.')}
  }
  const subject=`Aluno: ${student} — ${unit} — ${age} anos`;
  const timestamp=new Date().toISOString();
