@@ -13,7 +13,7 @@ import {csv,parseCsv} from './portal-domain.mjs';
 const pupil={id:'UND1_000001',name:'Aluno Fictício de Teste',birth_date:'2015-01-01',status:'approved',version:0};
 async function fixture(t){
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'lpc-flow-')),mail=[];
- const env={PORTAL_DATA_DIR:dir,PORTAL_SECRET:'only-tests-'.repeat(4),BOOTSTRAP_ADMIN_EMAIL:'admin@example.test',RESEND_API_KEY:'fake',MAIL_FROM:'test@example.test',PUBLIC_ORIGIN:'https://example.test',PORTAL_INTAKE_ACTIVE:'true'};
+ const env={PORTAL_DATA_DIR:dir,PORTAL_SECRET:'only-tests-'.repeat(4),BOOTSTRAP_ADMIN_EMAIL:'admin@example.test',BOOTSTRAP_CONTACTS_FILE:'',BOOTSTRAP_STUDENTS_FILE:'',RESEND_API_KEY:'fake',MAIL_FROM:'test@example.test',PUBLIC_ORIGIN:'https://example.test',PORTAL_INTAKE_ACTIVE:'true'};
  const store=createSqliteStore(env,{transport:async(u,o)=>{mail.push(JSON.parse(o.body));return Response.json({id:'fake'})}});
  t.after(()=>{store.close();if(!dir.startsWith(path.join(os.tmpdir(),'lpc-flow-')))throw Error('Unsafe test cleanup');fs.rmSync(dir,{recursive:true,force:true})});
  async function login(email){await store.requestCode(email);return (await store.verifyCode(email,mail.at(-1).text.match(/\b\d{8}\b/)[0])).access_token}
@@ -148,8 +148,34 @@ test('Migração: preserva membros, vínculos e integridade ao adicionar profess
 });
 
 test('Inicialização: importa uma vez, faz backup e não sobrescreve cadastro após reiniciar',async t=>{
- const {env,store,admin}=await fixture(t),{execFileSync}=await import('node:child_process');const source=path.join(env.PORTAL_DATA_DIR,'seed.csv');fs.writeFileSync(source,csv([pupil]));
- const args=['--input-type=module','--eval',"import {initializePortal} from './portal-bootstrap.mjs';await initializePortal();"],options={cwd:import.meta.dirname,env:{...process.env,...env,RENDER:'false',BOOTSTRAP_STUDENTS_FILE:source},encoding:'utf8'};
- execFileSync(process.execPath,args,options);assert.equal((await store.students()).length,1);assert.equal(fs.readdirSync(path.join(env.PORTAL_DATA_DIR,'backups')).length,1);
+ const {env,store,admin}=await fixture(t),{execFileSync}=await import('node:child_process');const source=path.join(env.PORTAL_DATA_DIR,'seed.csv'),contacts=path.join(env.PORTAL_DATA_DIR,'contacts.json');fs.writeFileSync(source,csv([pupil]));fs.writeFileSync(contacts,JSON.stringify([{id:pupil.id,guardian_name:'Responsável de teste',guardian_phone:'24999999999'}]));
+ const args=['--input-type=module','--eval',"import {initializePortal} from './portal-bootstrap.mjs';await initializePortal();"],options={cwd:import.meta.dirname,env:{...process.env,...env,RENDER:'false',BOOTSTRAP_STUDENTS_FILE:source,BOOTSTRAP_CONTACTS_FILE:contacts},encoding:'utf8'};
+ execFileSync(process.execPath,args,options);assert.equal((await store.students()).length,1);assert.equal(fs.readdirSync(path.join(env.PORTAL_DATA_DIR,'backups')).length,2);assert.equal((await store.studentContact(admin.user_id,pupil.id)).guardian_name,'Responsável de teste');
  await store.update(admin.user_id,{...pupil,name:'Nome corrigido no teste',version:1});execFileSync(process.execPath,args,options);assert.equal((await store.student(pupil.id)).name,'Nome corrigido no teste');assert.equal((await store.students()).length,1);
+});
+
+test('Contato do aluno: visível só para vinculados, versão e importação sem sobrescrever',async t=>{
+ const {request,store,admin,login}=await fixture(t);await store.import(admin.user_id,[pupil,{...pupil,id:'UND2_000001'}]);
+ assert.equal(await store.importContacts(admin.user_id,[{id:pupil.id,guardian_name:'Responsável da planilha',guardian_phone:'24999999999'}]),1);
+ let c=(await (await request('/students/'+pupil.id+'/contact')).json()).contact;assert.equal(c.guardian_name,'Responsável da planilha');
+ const patch={...c,guardian_name:'Responsável corrigido',guardian_email:'guardian@example.test',relationship:'Mãe'};assert.equal((await request('/students/'+pupil.id+'/contact',{method:'PATCH',data:patch})).status,200);
+ assert.equal((await request('/students/'+pupil.id+'/contact',{method:'PATCH',data:patch})).status,409);assert.equal(await store.importContacts(admin.user_id,[{id:pupil.id,guardian_name:'Valor antigo',guardian_phone:'24999999999'}]),0);
+ const guardian=await store.provision('guardian@example.test','guardian'),token=await login(guardian.email);assert.equal((await request('/students/'+pupil.id+'/contact',{token})).status,403);await store.link(admin.user_id,guardian.user_id,pupil.id);
+ c=(await (await request('/students/'+pupil.id+'/contact',{token})).json()).contact;assert.equal(c.guardian_name,'Responsável corrigido');assert.equal((await request('/students/UND2_000001/contact',{token})).status,403);assert.equal((await request('/students/'+pupil.id+'/contact',{token,method:'PATCH',data:{...c,guardian_email:'another@example.test'}})).status,403);
+ const exported=await request('/contacts.csv');assert.equal(exported.status,200);assert.match(await exported.text(),/Responsável corrigido/);assert.equal((await request('/contacts.csv',{token})).status,403);
+});
+test('Prospect completo continua pendente: somente admin aprova e gera um único ID',async t=>{
+ const {request,store,admin,login}=await fixture(t);const secretary=await store.provision('secretary@example.test','secretary'),token=await login(secretary.email),id=randomUUID();
+ const data={id,student_name:'Candidato Fictício',birth_date:'2015-01-01',unit:'amavale',guardian_name:'Responsável Fictício',guardian_email:'guardian@example.test',guardian_phone:'24999999999',relationship:'Mãe',source_reference:'Email de teste fictício',consent_version:'2026-10-05',checked:true};
+ assert.equal((await request('/registrations',{token,method:'POST',data:{...data,checked:false}})).status,400);assert.equal((await request('/registrations',{token,method:'POST',data})).status,201);assert.equal((await request('/registrations',{token,method:'POST',data})).status,201);
+ for(const kind of ['photo','student_document','guardian_document','medical_certificate']){const current=await store.registration(id),form=new FormData();form.set('kind',kind);form.set('version',current.version);form.set('file',kind==='photo'?new Blob([new Uint8Array([255,216,255,0])],{type:'image/jpeg'}):new Blob(['%PDF-1.7 fictício'],{type:'application/pdf'}),kind==='photo'?'foto.jpg':'doc.pdf');assert.equal((await request('/registrations/'+id+'/documents',{token,method:'POST',form})).status,201)}
+ let r=await store.registration(id);assert.equal(r.status,'pending');assert.equal(r.student_id,null);assert.equal(r.documents.length,4);assert.equal((await store.students()).length,0);assert.equal((await store.members()).some(m=>m.email===data.guardian_email),false);
+ const decision={version:r.version,decision:'approved',reason:'Conferido pela administração',checked:true};assert.equal((await request('/registrations/'+id+'/review',{token,method:'POST',data:decision})).status,403);
+ assert.equal((await request('/registrations/'+id+'/review',{method:'POST',data:decision})).status,200);assert.equal((await request('/registrations/'+id+'/review',{method:'POST',data:decision})).status,409);
+ r=await store.registration(id);assert.equal(r.student_id,'UND1_000001');assert.equal((await store.students()).length,1);assert.equal((await store.documents(r.student_id)).length,4);assert.equal((await store.studentContact(admin.user_id,r.student_id)).relationship,'Mãe');assert.equal((await store.members()).some(m=>m.email===data.guardian_email),true);
+ const form=new FormData();form.set('kind','report_card');form.set('version',r.version);form.set('file',new Blob(['%PDF-1.7 fake'],{type:'application/pdf'}),'boletim.pdf');assert.equal((await request('/registrations/'+id+'/documents',{method:'POST',form})).status,409);
+});
+test('Secretaria não aprova alterando o status da ficha diretamente',async t=>{
+ const {request,store,admin,login}=await fixture(t);await store.import(admin.user_id,[{...pupil,status:'pending'}]);await store.provision('secretary@example.test','secretary');const token=await login('secretary@example.test');
+ assert.equal((await request('/students/'+pupil.id,{token,method:'PATCH',data:{version:1,status:'approved'}})).status,403);assert.equal((await store.student(pupil.id)).status,'pending');
 });

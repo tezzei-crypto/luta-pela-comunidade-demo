@@ -12,6 +12,7 @@ export function projectTools({db,get,all,run,tx,requireRole,audit,requireUnit}){
    run('INSERT INTO student_contacts(student_id,guardian_name,guardian_email,guardian_phone) VALUES(?,?,?,?) ON CONFLICT(student_id) DO UPDATE SET guardian_name=excluded.guardian_name,guardian_email=excluded.guardian_email,guardian_phone=excluded.guardian_phone',r.student_id,r.guardian_name,r.guardian_email.toLowerCase(),r.guardian_phone);
    const email=r.guardian_email.trim().toLowerCase();let m=get('SELECT * FROM members WHERE email=?',email);
    if(!m){m={user_id:randomUUID(),role:'guardian',active:1};run("INSERT INTO members(user_id,email,role) VALUES(?,?,'guardian')",m.user_id,email);audit(actor,'member.provision:'+m.user_id)}
+   run('UPDATE student_contacts SET relationship=?,version=version+1 WHERE student_id=?',r.relationship||'',r.student_id);
    if(m.role==='guardian'&&m.active){run('INSERT OR IGNORE INTO links(user_id,student_id) VALUES(?,?)',m.user_id,r.student_id);audit(actor,'member.link:'+m.user_id,r.student_id)}
   },
   async appointmentContext(actor,id){const m=requireRole(actor,['admin','secretary','guardian']);if(m.role==='guardian'&&!get('SELECT 1 FROM links WHERE user_id=? AND student_id=?',actor,id))fail('Acesso não permitido.',403);const student=get("SELECT * FROM students WHERE id=? AND status='approved'",id);if(!student)fail('Cadastro sem aprovação ativa.',403);return {student,contact:get('SELECT guardian_name,guardian_phone FROM student_contacts WHERE student_id=?',id)||{guardian_name:'',guardian_phone:''}}},

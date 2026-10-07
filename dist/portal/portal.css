@@ -4,3 +4,5 @@
 .attendance-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(130px,200px);gap:16px;align-items:center;padding:10px 0;border-bottom:1px solid #d5dfe6}.attendance-row label{margin:0;overflow-wrap:anywhere}@media(max-width:600px){.attendance-row{grid-template-columns:1fr;gap:4px}}
 
 textarea{width:100%;max-width:100%;font:inherit;padding:.8rem;border:1px solid #8b9eae;border-radius:.35rem;resize:vertical}fieldset{min-width:0;margin:1rem 0;border:1px solid #bccad4;padding:1rem}.preserve-lines{white-space:pre-wrap;overflow-wrap:anywhere}#teaching-nav{display:flex;gap:1rem;flex-wrap:wrap;padding:1rem 0}#teaching-nav:empty{display:none}
+
+.document-checklist{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:8px}.document-checklist p{margin:0;padding:12px;border-radius:6px}.received{background:#eaf4ed}.missing{background:#fff5d7}#detail,#registration-detail{scroll-margin-top:20px}section:focus{outline:3px solid #235da5;outline-offset:3px}

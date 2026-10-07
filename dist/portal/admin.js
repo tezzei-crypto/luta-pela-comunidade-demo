@@ -33,17 +33,19 @@ async function registrations(){
 }
 async function review(id){
  const r=(await api('/registrations/'+id)).registration,box=$('registration-detail');box.hidden=false;box.replaceChildren(el('h3',r.student_name),el('p',`${r.age} anos · ${unitNames[r.unit]} · ${decisionNames[r.status]}`),el('p','Protocolo: '+r.id,{class:'muted'}),el('p','Responsável: '+r.guardian_name+' · '+r.relationship),el('p',r.guardian_email+' · '+r.guardian_phone));
- if(r.reason)box.append(el('p','Última decisão: '+r.reason));if(r.student_id)box.append(el('p','ID vinculado: '+r.student_id));
+ documentChecklist(box,r.documents);if(r.source==='staff')box.append(el('p','Origem: cadastro administrativo · '+r.source_reference));
+ if(r.reason)box.append(el('p','Última decisão: '+r.reason));if(r.student_id){box.append(el('p','ID vinculado: '+r.student_id));const open=el('button','Abrir ficha do aluno aprovado');open.addEventListener('click',action(()=>detail(r.student_id)));box.append(open)}
  for(const d of r.documents){const b=el('button','Baixar '+(kinds[d.kind]||'documento'),{class:'secondary'});b.addEventListener('click',action(async()=>download(await api('/registrations/'+id+'/documents/'+d.id,{blob:true}),'inscricao-'+d.id+(d.mime==='application/pdf'?'.pdf':d.mime==='image/png'?'.png':'.jpg'))));box.append(b)}
  if(r.status!=='approved'){
-  const form=el('form');field(form,'Decisão','decision','needs_info',{options:{needs_info:'Solicitar complementação',approved:'Aprovar cadastro',rejected:'Não aprovar'}});
+  registrationUploader(box,id,r);
+  const form=el('form');field(form,'Decisão','decision','needs_info',{options:me.role==='admin'?{needs_info:'Solicitar complementação',approved:'Aprovar candidato e gerar ID de aluno',rejected:'Não aprovar'}:{needs_info:'Solicitar complementação',rejected:'Não aprovar'}});
   const reason=field(form,'Motivo administrativo (obrigatório para complementação ou não aprovação)','reason','');reason.maxLength=500;
   const existing=field(form,'ID já existente — preencha somente se for o mesmo aluno','existing_student_id','');existing.maxLength=11;existing.placeholder='UND1_000002';
   form.append(el('p','Antes de criar um novo ID, confira se o aluno já está cadastrado. Vincular um ID existente exige conferir que se trata da mesma pessoa.',{class:'muted'}));
   const label=el('label',undefined,{class:'check-label'}),check=el('input',undefined,{type:'checkbox',name:'checked'});label.append(check,document.createTextNode('Conferi os documentos, a identidade e o email do responsável e os requisitos do projeto. A aprovação habilita esse email para acessar somente a ficha vinculada.'));form.append(label,el('button','Registrar decisão'));
   form.addEventListener('submit',action(async()=>{const values=Object.fromEntries(new FormData(form));values.version=r.version;values.checked=check.checked;const result=await api('/registrations/'+id+'/review',{method:'POST',data:values});await load();await review(id);notice(result.message+(result.student_id?' ID: '+result.student_id:''))}));box.append(form);
  }
- box.focus();
+ box.focus({preventScroll:true});box.scrollIntoView({behavior:'smooth',block:'start'});
 }
 async function audit(){const {events}=await api('/audit');$('audit-list').replaceChildren(tableOf(['Data e hora','Autor','Ação','Aluno'],events.map(e=>[new Date(e.created_at).toLocaleString('pt-BR'),e.actor_email||e.actor,e.action,e.student_id])))}
 document.addEventListener('portal:loaded',action(async()=>{

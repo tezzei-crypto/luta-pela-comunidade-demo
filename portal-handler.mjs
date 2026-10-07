@@ -1,3 +1,4 @@
+import {handleStudentDetails} from './student-details-handler.mjs';
 import {handleTeaching} from './teacher-handler.mjs';
 import {handleAgenda} from './agenda-handler.mjs';
 import {randomUUID} from 'node:crypto';
@@ -49,6 +50,7 @@ export async function handlePortal(req,env=process.env,injectedStore){
   const roster=async()=>staff?store.students():linked.length?store.students(linked):[];
   if(route==='/auth/verify'&&method==='POST')return json({access_token:session.access_token,expires_in:session.expires_in,role,email:member.email});
   if(route==='/me'&&method==='GET')return json({role,email:member.email,user_id:actor});
+  const details=await handleStudentDetails({req,route,method,store,actor});if(details)return details;
   const teaching=await handleTeaching({route,method,req,url,store,actor});if(teaching)return teaching;
   if(route==='/dashboard'&&method==='GET'){
    requireRole('admin','secretary');const days=Number(url.searchParams.get('days')||30);if(![7,30,90].includes(days))fail('Período inválido.');
@@ -71,7 +73,7 @@ export async function handlePortal(req,env=process.env,injectedStore){
     return json({registration:{...data,age:ageAt(data.birth_date),documents:documents.map(({object_path,...d})=>d)}});
    }
    if(registrationMatch[2]==='review'&&method==='POST'){
-    const p=await body();
+    const p=await body();if(p.decision==='approved'&&role!=='admin')fail('Somente o administrador pode aprovar candidatos.',403);
     if(!Number.isSafeInteger(p.version)||p.version<1||!['approved','needs_info','rejected'].includes(p.decision)||typeof p.reason!=='string'||p.reason.length>500||/[\x00-\x1f]/.test(p.reason))fail('Confira a decisão e o motivo.');
     if(p.decision==='approved'&&p.checked!==true)fail('Confirme a conferência dos documentos e da identidade do responsável.');
     if(p.decision!=='approved'&&p.reason.trim().length<5)fail('Informe o motivo administrativo da decisão.');

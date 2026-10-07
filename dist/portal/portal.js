@@ -25,18 +25,21 @@ function field(form,label,name,value,{type='text',readOnly=false,options,min,max
 async function detail(id){
  chosen=id;const s=(await api('/students/'+id)).student,box=$('detail');box.hidden=false;box.replaceChildren(el('h2',s.name),el('p',`${s.id} · ${s.age} anos`));
  const editable=['admin','secretary','guardian'].includes(me.role),staff=['admin','secretary'].includes(me.role);
+ const back=el('button','Voltar à lista de alunos',{class:'secondary'});back.addEventListener('click',()=>{$('search').scrollIntoView({behavior:'smooth',block:'start'});$('search').focus({preventScroll:true})});box.append(el('p','Núcleo: '+({UND1:'Amavale',UND2:'Valparaíso',UND3:'Vale do Carangola'}[s.id.slice(0,4)])),back);
+ if(editable)await showStudentContact(id,box);
  const form=el('form'),grid=el('div',undefined,{class:'grid'});form.append(grid);
  const make=(label,name,opts={})=>{const wrap=el('div');grid.append(wrap);return field(wrap,label,name,s[name],opts)};
- make('Nome do aluno','name',{readOnly:!staff});make('Data de nascimento','birth_date',{type:'date',readOnly:!staff});make('Situação do cadastro','status',{readOnly:!staff,options:{approved:'Aprovado',pending:'Em análise',inactive:'Inativo'}});
+ make('Nome do aluno','name',{readOnly:!staff});make('Data de nascimento','birth_date',{type:'date',readOnly:!staff});make('Situação do cadastro','status',{readOnly:me.role!=='admin',options:{approved:'Aprovado',pending:'Em análise',inactive:'Inativo'}});
  make('Peso (kg) — opcional','weight_kg',{type:'number',min:.1,max:500,step:.1,readOnly:!editable});make('Altura (cm) — opcional','height_cm',{type:'number',min:.1,max:300,step:.1,readOnly:!editable});
  for(const [k,t]of Object.entries({kimono:'Tamanho do kimono',rashguard:'Tamanho da rashguard',shorts:'Tamanho do shorts'})){const input=make(t+' — opcional',k,{readOnly:!editable});input.maxLength=30}
  if(editable){form.append(el('button','Salvar ficha'));form.addEventListener('submit',action(async()=>{const values=Object.fromEntries(new FormData(form));if(!staff)for(const k of ['name','birth_date','status'])delete values[k];values.version=s.version;await api('/students/'+id,{method:'PATCH',data:values});await load();await detail(id);notice('Ficha salva.')}))}
  box.append(form,el('h3','Documentos e foto'),el('p','Os arquivos ficam vinculados à ficha. Cada envio é uma nova versão. Envie apenas os documentos solicitados pelo projeto.',{class:'muted'}));
  const docs=(await api('/students/'+id+'/documents')).documents;
+ documentChecklist(box,docs);
  for(const d of docs){const row=el('div',undefined,{class:'document'});row.append(el('strong',kinds[d.kind]),el('p',d.original_name+' · '+new Date(d.created_at).toLocaleString('pt-BR')));const b=el('button','Baixar arquivo',{class:'secondary'});b.addEventListener('click',action(async()=>download(await api('/documents/'+d.id+'/download',{blob:true}),'documento-'+d.id+(d.mime==='application/pdf'?'.pdf':d.mime==='image/png'?'.png':'.jpg'))));row.append(b);box.append(row)}
  if(!docs.length)box.append(el('p','Nenhum documento disponível para este acesso.'));
  if(editable){const upload=el('form');field(upload,'Categoria','kind','photo',{options:kinds});const file=field(upload,'Arquivo PDF, JPG ou PNG (até 5 MB)','file','',{type:'file'});file.accept='.pdf,.jpg,.jpeg,.png';file.required=true;upload.append(el('button','Enviar arquivo'));upload.addEventListener('submit',action(async()=>{if(file.files[0]?.size>5*1024*1024)throw Error('O limite por arquivo é 5 MB.');await api('/students/'+id+'/documents',{method:'POST',form:new FormData(upload)});await detail(id);notice('Arquivo recebido para conferência.')}));box.append(upload)}
- if(s.status==='approved'&&['admin','secretary','guardian'].includes(me.role)){const appointment=el('section'),button=el('button','Solicitar atendimento com os dados desta ficha');button.addEventListener('click',action(()=>showPrivateAppointment(id,appointment)));appointment.append(button);box.append(appointment)}box.focus({preventScroll:true});
+ if(s.status==='approved'&&['admin','secretary','guardian'].includes(me.role)){const appointment=el('section'),button=el('button','Solicitar atendimento com os dados desta ficha');button.addEventListener('click',action(()=>showPrivateAppointment(id,appointment)));appointment.append(button);box.append(appointment)}box.focus({preventScroll:true});box.scrollIntoView({behavior:'smooth',block:'start'});
 }
 $('export').addEventListener('click',action(async()=>download(await api('/export.csv',{blob:true}),'alunos.csv')));
 $('doc-index').addEventListener('click',action(async()=>download(await api('/documents.csv',{blob:true}),'indice-documentos.csv')));
