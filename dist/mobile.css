@@ -47,3 +47,4 @@ input[type=date],input[type=time]{min-height:48px;min-inline-size:0}
 @media(max-width:360px){.student-details{grid-template-columns:1fr}.hero h1 br{display:none}.hero h1 em{display:block}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition:none!important}}
 .form-status,.form-error,.form-success,h1,h2,h3{overflow-wrap:anywhere}
+#metrics-choice{padding:20px;margin:20px 0;border:1px solid #718599;border-radius:8px;background:#fff;color:#142d42;font-family:system-ui,sans-serif}#metrics-choice p{font-size:15px;line-height:1.6}#metrics-choice button,.metrics-settings{font:inherit;font-size:14px;padding:12px;margin:6px;border:1px solid #142d42;border-radius:6px;background:#fff;color:#142d42;cursor:pointer;min-height:44px;max-width:100%;white-space:normal}
