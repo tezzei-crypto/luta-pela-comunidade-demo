@@ -1,6 +1,11 @@
 import {readFile} from 'node:fs/promises';
+import {createStore} from './portal-store.mjs';
 const registryPath=new URL('./data/approved-students.json',import.meta.url);
 export async function loadApprovedStudents(){
+ if(process.env.PORTAL_REGISTRY_ACTIVE==='true'){
+  const rows=await createStore(process.env).students();
+  return rows.map(({id,status})=>({id,status}));
+ }
  const raw=process.env.APPROVED_STUDENTS_JSON;
  const data=JSON.parse(raw===undefined?await readFile(registryPath,'utf8'):raw);
  if(data.version!==1||!Array.isArray(data.students))throw Error('Invalid registry');
