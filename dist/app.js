@@ -41,4 +41,3 @@ const metricsScript=document.createElement('script');metricsScript.src='/metrics
 const staffAccess=document.createElement('nav');staffAccess.className='staff-access';staffAccess.setAttribute('aria-label','Acessos da equipe do projeto');
 for(const [url,label]of [['/administracao/','Área da equipe'],['/professor/','Área do professor'],['/psicologia/','Área da psicóloga'],['/assistencia-social/','Área da assistente social']]){const link=document.createElement('a');link.href=url;link.textContent=label;staffAccess.append(link)}
 document.querySelector('footer')?.append(staffAccess);
-const secretaryContactScript=document.createElement('script');secretaryContactScript.src='/contact-widget.js';secretaryContactScript.defer=true;document.head.append(secretaryContactScript);
