@@ -53,7 +53,8 @@ test('Fluxo integrado: inscrição persiste sem email, análise e aprovação co
  assert.equal((await (await request('/students/UND1_000001/documents')).json()).documents.length,4);
 });
 test('Servidor HTTP: páginas, scripts e privacidade dos arquivos internos',async t=>{
- const child=spawn(process.execPath,['server.mjs'],{cwd:import.meta.dirname,env:{...process.env,PORT:'0',HOST:'127.0.0.1',PORTAL_DATA_DIR:'',PORTAL_SECRET:''},stdio:['ignore','pipe','pipe']});
+ // The isolated loopback server must not inherit production hosts from Render's build environment.
+ const child=spawn(process.execPath,['server.mjs'],{cwd:import.meta.dirname,env:{...process.env,PORT:'0',HOST:'127.0.0.1',PORTAL_DATA_DIR:'',PORTAL_SECRET:'',PUBLIC_ORIGIN:'',RENDER_EXTERNAL_URL:'',ADDITIONAL_PUBLIC_ORIGINS:'',RENDER:'false'},stdio:['ignore','pipe','pipe']});
  t.after(()=>child.kill());let output='';const port=await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('Server timeout')),10000);child.on('error',reject);child.stdout.on('data',b=>{output+=b;const m=output.match(/127\.0\.0\.1:(\d+)/);if(m){clearTimeout(timer);resolve(m[1])}})});
  const base='http://127.0.0.1:'+port;
  for(const route of ['/','/agendamento/','/inscricao/','/patrocinar/','/portal/','/administracao/','/portal/portal.js','/portal/admin.js','/portal/portal.css']){const r=await fetch(base+route);assert.equal(r.status,200,route);if(route==='/administracao/')assert.match(r.headers.get('content-security-policy'),/frame-ancestors 'none'/)}
