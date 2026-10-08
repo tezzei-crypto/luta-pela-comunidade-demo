@@ -1,4 +1,4 @@
-export const calendarStatuses={free:'Livre',pending:'Aguardando secretaria',confirmed:'Confirmado',completed:'Realizado',absent:'Não compareceu',withdrawn:'Horário retirado',expired:'Horário encerrado',unavailable:'Profissional indisponível'};
+export const calendarStatuses={waiting:'Preferência sem vaga',free:'Livre',pending:'Aguardando secretaria',confirmed:'Confirmado',completed:'Realizado',absent:'Não compareceu',withdrawn:'Horário retirado',expired:'Horário encerrado',unavailable:'Profissional indisponível'};
 const zone='America/Sao_Paulo',dayMs=86400000;
 export function localDay(value=new Date()){const parts=new Intl.DateTimeFormat('en-CA',{timeZone:zone,year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date(value));return ['year','month','day'].map(k=>parts.find(p=>p.type===k).value).join('-')}
 export const dayDate=day=>new Date(day+'T12:00:00Z');
