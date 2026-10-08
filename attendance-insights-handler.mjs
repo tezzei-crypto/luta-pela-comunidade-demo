@@ -21,5 +21,6 @@ export async function handleAttendanceInsights({req,route,method,url,store,actor
  const match=route.match(/^\/attendance-alerts\/([0-9a-f-]{36})$/i);
  if(match&&method==='GET')return json({alert:await store.attendanceAlert(actor,match[1])});
  if(match&&method==='POST')return json({alert:await store.attendanceFollowup(actor,match[1],await body()),message:'Acompanhamento registrado. Nenhuma mensagem foi enviada à família.'});
- if(route==='/rollcall-issues'&&method==='GET')return json({issues:await store.rollcallIssues(actor,p)});
+ if(route==='/rollcall-issues'&&method==='GET')return json({issues:await store.rollcallIssues(actor,p),settings:await store.rollcallSettings(actor)});
+ if(route==='/rollcall-settings'&&method==='POST')return json({settings:await store.saveRollcallSettings(actor,await body()),message:'Regras dos lembretes de chamada salvas.'});
 }

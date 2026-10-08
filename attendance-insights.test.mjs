@@ -12,9 +12,9 @@ import {localDay} from './professional-tools.mjs';
 import {absenceEpisodes} from './attendance-insights.mjs';
 import {excelWorkbook} from './excel-export.mjs';
 
-async function fixture(t){
+async function fixture(t,options={}){
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'lpc-attendance-')),mail=[],env={PORTAL_DATA_DIR:dir,PORTAL_SECRET:'test-only-'.repeat(5),BOOTSTRAP_ADMIN_EMAIL:'admin@example.test',RESEND_API_KEY:'fake',MAIL_FROM:'sender@example.test',PUBLIC_ORIGIN:'https://test.example'};
- const transport=async(u,o)=>{mail.push({url:u,...JSON.parse(o.body),key:o.headers['Idempotency-Key']});return Response.json({id:randomUUID()})};let store=createSqliteStore(env,{transport});
+ const transport=async(u,o)=>{mail.push({url:u,...JSON.parse(o.body),key:o.headers['Idempotency-Key']});return options.transport?options.transport(u,o):Response.json({id:randomUUID()})};let store=createSqliteStore(env,{transport});
  t.after(()=>{store.close();fs.rmSync(dir,{recursive:true,force:true})});const admin=(await store.members())[0],sec=await store.provision('secretary@example.test','secretary'),guardian=await store.provision('guardian@example.test','guardian');
  const pupils=[{id:'UND1_000001',name:'Aluno Alfa Fictício',birth_date:'2018-01-01',status:'approved',version:0},{id:'UND1_000002',name:'Aluno Beta Fictício',birth_date:'2017-02-02',status:'approved',version:0},{id:'UND2_000001',name:'Outro Núcleo Fictício',birth_date:'2018-03-03',status:'approved',version:0}];await store.import(admin.user_id,pupils);
  const teacher=await store.saveTeacher(admin.user_id,null,{name:'Professor Fictício',email:'teacher@example.test',phone:'24999999999',status:'pending',test_access:true,units:['amavale'],version:0});
@@ -25,7 +25,7 @@ async function fixture(t){
  const login=async email=>{await store.requestCode(email);return (await store.verifyCode(email,mail.at(-1).text.match(/\b\d{8}\b/)[0])).access_token};
  const request=(token,url,method='GET',data)=>handlePortal(new Request(env.PUBLIC_ORIGIN+'/api/portal'+url,{method,headers:{Origin:env.PUBLIC_ORIGIN,Authorization:'Bearer '+token,...(data?{'Content-Type':'application/json'}:{})},...(data?{body:JSON.stringify(data)}:{})}),env,store);
  const care=async(role,unit='amavale')=>{const email=role+'-'+unit+'@example.test',p={name:'Profissional Fictício',email,role,phone:'24999999999',rg:'TESTE',cpf:'52998224725',council_number:'TESTE',council_region:'RJ',review_until:'2099-01-01',status:'pending',version:0,units:[unit]};let user=await store.saveProfessional(admin.user_id,null,p);for(const kind of ['photo','council'])await store.addProfessionalDocument(admin.user_id,user.user_id,{id:randomUUID(),kind,object_path:'fake/'+randomUUID(),mime:'image/png',size:20,original_name:'fake'});user=await store.professional(admin.user_id,user.user_id);return store.saveProfessional(admin.user_id,user.user_id,{...p,status:'verified',checked:true,version:user.version})};
- return {get store(){return store},env,dir,admin,sec,guardian,teacher,group,other,pupils,dates,lesson,mail,login,request,care,data,reopen(){store.close();store=createSqliteStore(env,{transport})}};
+ return {get store(){return store},transport,env,dir,admin,sec,guardian,teacher,group,other,pupils,dates,lesson,mail,login,request,care,data,reopen(){store.close();store=createSqliteStore(env,{transport})}};
 }
 test('Sequências: justificativa e desconhecido interrompem; cancelamento não vira falta',()=>{
  const rows=(statuses)=>statuses.map((status,i)=>({status,day:String(i),class_id:String(i)}));assert.equal(absenceEpisodes(rows(['absent','absent'])).length,0);assert.equal(absenceEpisodes(rows(['absent','absent','absent','absent']))[0].rows.length,4);
@@ -108,7 +108,88 @@ test('Migração preserva o professor único do núcleo; retirada manual não é
  assert.deepEqual((await f.store.group(f.admin.user_id,f.group.id)).teachers,[f.teacher.user_id]);let g=await f.store.group(f.admin.user_id,f.group.id);await f.store.saveGroup(f.admin.user_id,g.id,{...f.data,teachers:[],version:g.version});f.reopen();assert.equal((await f.store.group(f.admin.user_id,g.id)).teachers.length,0);
 });
 
-test('Chamada atrasada envia email somente à secretaria e administradores; não duplica após reinício',async t=>{
+test('Chamada atrasada avisa professor vinculado, secretaria e administradores, sem duplicar após reinício',async t=>{
  const f=await fixture(t);await f.care('psychologist');const db=new DatabaseSync(path.join(f.dir,'portal.sqlite')),yesterday=f.dates.at(-1);db.prepare("UPDATE attendance_monitor_settings SET value=? WHERE key='start_day'").run(yesterday);db.prepare('UPDATE class_groups SET created_day=?').run(yesterday);db.close();
- await f.store.deliverRollcallNotices();const first=f.mail.length;assert.ok(first>=4);assert.ok(f.mail.every(m=>[f.admin.email,f.sec.email].includes(m.to[0])&&m.subject.includes('Chamada pendente')&&!m.text.includes('Aluno Alfa')));f.reopen();await f.store.deliverRollcallNotices();assert.equal(f.mail.length,first);
+ const clock=new Date(localDay()+'T19:01:00-03:00');await f.store.deliverRollcallNotices(clock);const first=f.mail.length;assert.ok(first>=4);assert.ok(f.mail.every(m=>[f.admin.email,f.sec.email,f.teacher.email].includes(m.to[0])&&m.subject.includes('Chamada pendente')&&!m.text.includes('Aluno Alfa')));assert.equal(f.mail.filter(m=>m.to[0]===f.teacher.email).length,1);f.reopen();await f.store.deliverRollcallNotices(clock);assert.equal(f.mail.length,first);
+});
+
+test('Regras de chamada editáveis: limites, concorrência, persistência e permissões HTTP',async t=>{
+ const f=await fixture(t),p=await f.store.rollcallSettings(f.admin.user_id);
+ assert.equal(p.grace_minutes,60);assert.equal(p.can_edit,true);
+ const teacherToken=await f.login(f.teacher.email),adminToken=await f.login(f.admin.email),guardianToken=await f.login(f.guardian.email);
+ assert.equal((await f.request(teacherToken,'/rollcall-issues')).status,200);
+ assert.equal((await f.request(guardianToken,'/rollcall-issues')).status,403);
+ for(const token of [teacherToken,guardianToken])assert.equal((await f.request(token,'/rollcall-settings','POST',p)).status,403);
+ assert.equal((await f.request(adminToken,'/rollcall-settings','POST',{...p,grace_minutes:-1})).status,400);
+ assert.equal((await f.request(adminToken,'/rollcall-settings','POST',{...p,teacher_email:'true'})).status,400);
+ const saved=await f.store.saveRollcallSettings(f.admin.user_id,{...p,grace_minutes:15,repeat_hours:48,max_notices:3});
+ assert.equal(saved.version,1);await assert.rejects(f.store.saveRollcallSettings(f.admin.user_id,p),{status:409});f.reopen();assert.equal((await f.store.rollcallSettings(f.admin.user_id)).grace_minutes,15);
+});
+
+test('Prazo configurável, isolamento do professor e conclusão imediata sem inventar faltas',async t=>{
+ const f=await fixture(t),db=new DatabaseSync(path.join(f.dir,'portal.sqlite'));try{
+ await f.store.saveRollcallSettings(f.admin.user_id,{...await f.store.rollcallSettings(f.admin.user_id),grace_minutes:0});
+ // Policy reconciliation uses the real clock; isolate the boundary under test.
+ db.exec('DELETE FROM rollcall_notices; DELETE FROM rollcall_issues');
+ f.store.checkRollcalls(new Date(localDay()+'T15:59:00-03:00'));assert.equal(db.prepare('SELECT count(*) n FROM rollcall_issues').get().n,0);
+ const clock=new Date(localDay()+'T19:01:00-03:00');f.store.checkRollcalls(clock);
+ let own=await f.store.rollcallIssues(f.teacher.user_id,{},clock);assert.equal(own.length,1);assert.equal(own[0].group_id,f.group.id);assert.ok(own[0].notifications.every(n=>n.recipient_id===f.teacher.user_id));
+ const c=await f.store.createClass(f.teacher.user_id,{group_id:f.group.id,day:localDay()});
+ await f.store.markAttendance(f.teacher.user_id,c.id,[{id:f.pupils[0].id,status:'present',version:0}]);assert.equal(db.prepare('SELECT status FROM rollcall_issues WHERE group_id=?').get(f.group.id).status,'open');
+ assert.equal(db.prepare("SELECT count(*) n FROM attendance WHERE status='absent'").get().n,0);
+ await f.store.markAttendance(f.teacher.user_id,c.id,[{id:f.pupils[1].id,status:'justified',version:0}]);assert.equal(db.prepare('SELECT status FROM rollcall_issues WHERE group_id=?').get(f.group.id).status,'resolved');
+ await f.store.deliverRollcallNotices(clock);assert.equal(f.mail.filter(m=>m.to[0]===f.teacher.email).length,0);
+ }finally{db.close()}
+});
+
+test('Pausa noturna, repetição limitada, parada por conclusão e suspensão global',async t=>{
+ const f=await fixture(t),db=new DatabaseSync(path.join(f.dir,'portal.sqlite'));try{
+ db.prepare('UPDATE class_groups SET weekdays=?').run(JSON.stringify([new Date(localDay()+'T12:00:00Z').getUTCDay()]));
+ const night=new Date(localDay()+'T23:00:00-03:00'),morning=new Date(+night+9*3600000);
+ await f.store.deliverRollcallNotices(night);assert.equal(f.mail.length,0);
+ await f.store.deliverRollcallNotices(morning);assert.equal(f.mail.length,5);
+ await f.store.deliverRollcallNotices(new Date(+morning+23*3600000));assert.equal(f.mail.length,5);
+ await f.store.deliverRollcallNotices(new Date(+morning+24*3600000));assert.equal(f.mail.length,10);
+ await f.store.deliverRollcallNotices(new Date(+morning+48*3600000));assert.equal(f.mail.length,10);assert.equal(new Set(f.mail.map(m=>m.key)).size,10);
+ await f.store.saveRollcallSettings(f.admin.user_id,{...await f.store.rollcallSettings(f.admin.user_id),enabled:false,max_notices:5});
+ await f.store.deliverRollcallNotices(new Date(+morning+72*3600000));assert.equal(f.mail.length,10);
+ }finally{db.close()}
+});
+
+test('Cancelamento, revogação e retirada do vínculo impedem email ao professor',async t=>{
+ const f=await fixture(t),clock=new Date(localDay()+'T19:00:00-03:00');f.store.checkRollcalls(clock);
+ let g=await f.store.group(f.admin.user_id,f.group.id);await f.store.saveGroup(f.admin.user_id,g.id,{...f.data,teachers:[],version:g.version});
+ assert.equal((await f.store.rollcallIssues(f.teacher.user_id,{},clock)).length,0);await f.store.deliverRollcallNotices(clock);assert.equal(f.mail.filter(m=>m.to[0]===f.teacher.email).length,0);
+ g=await f.store.group(f.admin.user_id,f.group.id);await f.store.saveGroup(f.admin.user_id,g.id,{...f.data,version:g.version});
+ const c=await f.store.createClass(f.teacher.user_id,{group_id:g.id,day:localDay()});await f.store.cancelClass(f.teacher.user_id,c.id,{cancelled:true,reason:'Aula não ocorreu por teste'});
+ await f.store.deliverRollcallNotices(clock);assert.equal(f.mail.filter(m=>m.to[0]===f.teacher.email).length,0);
+ await f.store.cancelClass(f.teacher.user_id,c.id,{cancelled:false,reason:'Correção do cancelamento de teste'});await f.store.setMember(f.admin.user_id,f.teacher.user_id,'teacher',false);
+ await f.store.deliverRollcallNotices(clock);assert.equal(f.mail.filter(m=>m.to[0]===f.teacher.email).length,0);
+});
+
+test('Falha de rede tenta novamente com a mesma chave e após 23h exige conferência',async t=>{
+ const f=await fixture(t,{transport:async()=>{throw Error('falha simulada')}}),clock=new Date(localDay()+'T19:00:00-03:00');
+ await f.store.deliverRollcallNotices(clock);assert.equal(f.mail.length,5);const keys=f.mail.map(m=>m.key);
+ await f.store.deliverRollcallNotices(new Date(+clock+60000));assert.equal(f.mail.length,5);
+ await f.store.deliverRollcallNotices(new Date(+clock+300000));assert.equal(f.mail.length,10);assert.deepEqual(f.mail.slice(5).map(m=>m.key),keys);
+ const db=new DatabaseSync(path.join(f.dir,'portal.sqlite'));try{db.prepare('UPDATE class_groups SET weekdays=?').run('[]');await f.store.deliverRollcallNotices(new Date(+clock+23*3600000));assert.equal(db.prepare("SELECT count(*) n FROM rollcall_notices WHERE status='review'").get().n,5);assert.equal(f.mail.length,10)}finally{db.close()}
+});
+
+test('Dois processos, recuperação de lease e migração não duplicam aviso aceito',async t=>{
+ const f=await fixture(t,{transport:async()=>{await new Promise(resolve=>setTimeout(resolve,10));return Response.json({id:randomUUID()})}}),clock=new Date(localDay()+'T19:00:00-03:00');
+ const other=createSqliteStore(f.env,{transport:f.transport});try{await Promise.all([f.store.deliverRollcallNotices(clock),other.deliverRollcallNotices(clock)])}finally{other.close()}
+ assert.equal(f.mail.length,5);assert.equal(new Set(f.mail.map(m=>m.key)).size,5);
+ const db=new DatabaseSync(path.join(f.dir,'portal.sqlite'));try{
+  assert.equal(db.prepare('SELECT count(*) n FROM rollcall_notice_history').get().n,5);
+  db.exec("UPDATE rollcall_notices SET send_count=0 WHERE status='accepted'");f.reopen();await f.store.deliverRollcallNotices(clock);assert.equal(f.mail.length,5);
+  db.prepare("UPDATE rollcall_notices SET status='sending',send_count=0,last_sent=0,attempts=1,first_attempt=?,lease_until=?,claim_token='interrupted' WHERE recipient_id=?").run(+clock,+clock+120000,f.teacher.user_id);
+  await f.store.deliverRollcallNotices(new Date(+clock+60000));assert.equal(f.mail.length,5);
+  await f.store.deliverRollcallNotices(new Date(+clock+120000));assert.equal(f.mail.length,6);assert.ok(f.mail.slice(0,5).some(m=>m.key===f.mail[5].key));
+ }finally{db.close()}
+});
+
+test('Servidor sem email mantém a pendência visível sem afirmar envio',async t=>{
+ const f=await fixture(t);f.env.RESEND_API_KEY='';const clock=new Date(localDay()+'T19:00:00-03:00');await f.store.deliverRollcallNotices(clock);
+ assert.equal(f.mail.length,0);assert.equal((await f.store.rollcallSettings(f.admin.user_id)).mail_configured,false);
+ const rows=await f.store.rollcallIssues(f.teacher.user_id,{},clock);assert.equal(rows.length,1);assert.equal(rows[0].notifications[0].status,'pending');assert.equal(rows[0].notifications[0].send_count,0);
 });

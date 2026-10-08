@@ -60,12 +60,12 @@ export function createSqliteStore(env,{transport=fetch}={}){
  const asRegistration=r=>r?{...r,documents:JSON.parse(r.documents)}:undefined;
  function objectPath(key){if(typeof key!=='string'||!key||key.split('/').some(p=>!p||p==='.'||p==='..'||!/^[a-zA-Z0-9_.-]+$/.test(p)))fail('Arquivo inválido.');const full=path.resolve(objects,...key.split('/'));if(!full.startsWith(objects+path.sep))fail('Arquivo inválido.');return full}
  const teaching=teacherTools({db,get,all,run,tx,requireRole,audit});
- let insights;
- const project=projectTools({db,get,all,run,tx,requireRole,audit,requireUnit:teaching.requireUnit,onAttendanceChanged:()=>insights?.attendanceReconcile()});
+ let insights,rollcalls;
+ const project=projectTools({db,get,all,run,tx,requireRole,audit,requireUnit:teaching.requireUnit,onAttendanceChanged:()=>{insights?.attendanceReconcile();rollcalls?.rollcallReconcile()}});
  const professionals=professionalTools({db,get,all,run,tx,requireRole,audit});
  const scheduling=schedulingTools({db,get,all,run,tx,requireRole,audit,...professionals});
  insights=attendanceInsights({db,get,all,run,tx,requireRole,audit,env,transport});
- const rollcalls=rollcallTools({db,get,all,run,tx,requireRole,audit,env,transport});
+ rollcalls=rollcallTools({db,get,all,run,tx,requireRole,audit,env,transport});
  db.exec('CREATE TABLE IF NOT EXISTS student_sequences(prefix TEXT PRIMARY KEY,last_number INTEGER NOT NULL CHECK(last_number BETWEEN 0 AND 999999))');
  const initial=env.BOOTSTRAP_ADMIN_EMAIL?.trim().toLowerCase();
  if(initial&&emailValid(initial)&&!get("SELECT user_id FROM members WHERE role='admin'")){
