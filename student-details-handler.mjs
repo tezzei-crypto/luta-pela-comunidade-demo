@@ -4,6 +4,13 @@ const headers={'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'};
 const json=(p,s=200)=>Response.json(p,{status:s,headers});
 export async function handleStudentDetails({req,route,method,store,actor}){
  const body=async()=>{try{return await req.json()}catch{fail('Dados inválidos.')}};
+ const progression=route.match(/^\/students\/(UND[1-3]_\d{6})\/progression(\/confirm)?$/);
+ if(progression){
+  if(method==='GET'&&!progression[2])return json({progression:await store.studentProgression(actor,progression[1])});
+  if(method==='PATCH'&&!progression[2])return json({progression:await store.saveStudentGraduation(actor,progression[1],await body()),message:'Faixa, graus e data de referência salvos.'});
+  if(method==='POST'&&progression[2])return json({progression:await store.confirmStudentGraduation(actor,progression[1],await body()),message:'Graduação confirmada e registrada no histórico.'});
+ }
+ if(route==='/graduation-policy'&&method==='PATCH')return json({policy:await store.saveGraduationPolicy(actor,await body()),message:'Regra atualizada para todos os alunos. Graduações já confirmadas foram preservadas.'});
  const match=route.match(/^\/students\/(UND[1-3]_\d{6})\/contact$/);
  if(match){if(method==='GET')return json({contact:await store.studentContact(actor,match[1])});if(method==='PATCH')return json({contact:await store.saveStudentContact(actor,match[1],await body()),message:'Contato salvo. Permissões de acesso são geridas em Contas e vínculos.'})}
  if(route==='/contacts.csv'&&method==='GET')return new Response(csv(await store.contactExport(actor),['id','name','guardian_name','guardian_email','guardian_phone','relationship','version']),{headers:{...headers,'Content-Type':'text/csv; charset=utf-8','Content-Disposition':'attachment; filename="contatos-restritos.csv"'}});
