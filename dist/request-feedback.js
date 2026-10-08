@@ -21,7 +21,13 @@ export function createRequestFeedback({fetcher=fetch,report=reportDiagnostic,onl
   const id=safeId(options.headers?.['X-Support-ID']),started=Date.now(),controller=new AbortController();
   const headers=new Headers(options.headers);headers.set('X-Support-ID',id);
   const timer=setTimeout(()=>controller.abort(),timeoutMs);let response;
-  try{response=await fetcher(url,{...options,headers,signal:controller.signal})}
+  try{
+   const incoming=await fetcher(url,{...options,headers,signal:controller.signal});
+   // Receiving headers does not mean the confirmation/download has finished.
+   // Keep the timeout active until the entire body has arrived.
+   const body=await incoming.arrayBuffer();
+   response=new Response(body.byteLength?body:null,{status:incoming.status,statusText:incoming.statusText,headers:incoming.headers});
+  }
   catch{
    const kind=!online()?'offline':controller.signal.aborted?'timeout':'network';
    report({support_id:id,operation:operationFor(url),kind,status:0,duration_ms:Date.now()-started});

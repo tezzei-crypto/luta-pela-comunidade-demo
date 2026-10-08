@@ -1,4 +1,5 @@
 import {createStore,portalConfigured} from './portal-store.mjs';
+import {clientAddress} from './client-address.mjs';
 import {supportId,operationFor,kindForStatus,causeFor,sanitizeDiagnostic} from './diagnostics.mjs';
 
 export function recordDiagnostic(env,raw,store){
@@ -24,7 +25,7 @@ export async function handleClientDiagnostic(req,res,url,env){
  if(req.method!=='POST')return reply(405,'Método não permitido.');
  if(req.headers.origin!==url.origin)return reply(403,'Origem não permitida.');
  if(!String(req.headers['content-type']).startsWith('application/json'))return reply(415,'Formato inválido.');
- const key=req.socket.remoteAddress,now=Date.now(),old=rates.get(key);
+ const key=clientAddress(req,env),now=Date.now(),old=rates.get(key);
  if(rates.size>1000)for(const [k,v] of rates)if(now-v.at>60000)rates.delete(k);
  if(old&&now-old.at<60000&&old.count>=20)return reply(429,'Aguarde antes de tentar novamente.');
  rates.set(key,old&&now-old.at<60000?{at:old.at,count:old.count+1}:{at:now,count:1});

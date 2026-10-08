@@ -1,5 +1,6 @@
 import {observeRequest,handleClientDiagnostic} from './diagnostic-http.mjs';
 import {requestOrigin} from './request-origin.mjs';
+import {clientAddress} from './client-address.mjs';
 import {withSocialPreview} from './social-preview.mjs';
 import {handleContact} from './contact-handler.mjs';
 import {initializePortal} from './portal-bootstrap.mjs';
@@ -27,11 +28,11 @@ async function serveRequest(req,res){
  if(['/api/metrics','/api/metrics-status'].includes(url.pathname)){
   const chunks=[];let n=0;
   for await(const chunk of req){n+=chunk.length;if(n>1024){res.writeHead(413).end();return}chunks.push(chunk)}
-  const key='metrics:'+req.socket.remoteAddress,now=Date.now(),v=limits.get(key);if(v&&now-v.start<60000&&v.count>=120){res.writeHead(429).end();return}limits.set(key,v&&now-v.start<60000?{...v,count:v.count+1}:{start:now,count:1});
+  const key='metrics:'+clientAddress(req,process.env),now=Date.now(),v=limits.get(key);if(limits.size>1000)for(const [k,v]of limits)if(now-v.start>600000)limits.delete(k);if(v&&now-v.start<60000&&v.count>=120){res.writeHead(429).end();return}limits.set(key,v&&now-v.start<60000?{...v,count:v.count+1}:{start:now,count:1});
   await send(await handleMetrics(new Request(url,{method:req.method,headers:req.headers,...(!['GET','HEAD'].includes(req.method)?{body:Buffer.concat(chunks)}:{})}),process.env));return;
  }
  if(url.pathname.startsWith('/api/portal/')){
-  const now=Date.now(),auth=url.pathname.includes('/auth/'),key='portal:'+req.socket.remoteAddress+':'+(auth?'auth':'data');
+  const now=Date.now(),auth=url.pathname.includes('/auth/'),key='portal:'+clientAddress(req,process.env)+':'+(auth?'auth':'data');
   if(limits.size>1000)for(const [k,v]of limits)if(now-v.start>600000)limits.delete(k);
   const entry=limits.get(key);
   if(entry&&now-entry.start<600000&&entry.count>=(auth?20:300)){await send(Response.json({message:'Muitas tentativas. Aguarde alguns minutos.'},{status:429,headers:{'Cache-Control':'no-store'}}));return}
@@ -47,7 +48,7 @@ async function serveRequest(req,res){
  if(['/api/registrations','/api/sponsorships','/api/agenda','/api/training-agenda','/api/student-access'].includes(url.pathname)){
   if(req.method!=='POST'){res.writeHead(405).end();return}
   if(!['/api/training-agenda','/api/student-access'].includes(url.pathname)&&!(url.pathname==='/api/registrations'&&process.env.PORTAL_INTAKE_ACTIVE==='true')&&(!process.env.RESEND_API_KEY||!process.env.MAIL_FROM)){await send(Response.json({message:'O envio de inscrições ainda está em configuração.'},{status:503}));return}
-  const key=url.pathname+':'+req.socket.remoteAddress,now=Date.now(),entry=limits.get(key);if(limits.size>1000)for(const [k,v]of limits)if(now-v.start>600000)limits.delete(k);
+  const key=url.pathname+':'+clientAddress(req,process.env),now=Date.now(),entry=limits.get(key);if(limits.size>1000)for(const [k,v]of limits)if(now-v.start>600000)limits.delete(k);
   if(entry&&now-entry.start<600000&&entry.count>=(url.pathname==='/api/student-access'?60:5)){await send(Response.json({message:'Muitas tentativas. Aguarde alguns minutos.'},{status:429}));return}
   limits.set(key,entry&&now-entry.start<600000?{...entry,count:entry.count+1}:{start:now,count:1});
   const chunks=[];let length=0;for await(const chunk of req){length+=chunk.length;if(length>(url.pathname==='/api/student-access'?1000:['/api/agenda','/api/training-agenda'].includes(url.pathname)?4000:url.pathname==='/api/sponsorships'?16000:13*1024*1024)){res.writeHead(413,{'Content-Type':'application/json'}).end(JSON.stringify({message:'Arquivos excedem o limite de 12 MB.'}));return}chunks.push(chunk)}

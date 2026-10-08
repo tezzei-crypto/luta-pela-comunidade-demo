@@ -49,6 +49,37 @@ test('Relatório distingue ausência de dados, filtra núcleo/turma e exclui can
 test('Professor só abre, consulta e lança chamadas de turmas vinculadas',async t=>{
  const f=await fixture(t);assert.equal((await f.store.groups(f.teacher.user_id,'amavale')).length,1);const denied=await f.lesson(0,'present',f.other);await assert.rejects(f.store.createClass(f.teacher.user_id,{group_id:f.other.id,day:f.dates[0]}),{status:403});await assert.rejects(f.store.attendance(f.teacher.user_id,denied.id),{status:403});await assert.rejects(f.store.markAttendance(f.teacher.user_id,denied.id,[{id:f.pupils[0].id,status:'absent',version:1}]),{status:403});await assert.rejects(f.store.cancelClass(f.teacher.user_id,denied.id,{cancelled:true,reason:'Sem vínculo'}),{status:403});assert.equal((await f.store.attendanceExport(f.teacher.user_id,'amavale',f.dates[0],f.dates[7])).length,0);
 });
+
+test('CSV de frequência exclui aulas canceladas e volta a incluí-las após reabertura',async t=>{
+ const f=await fixture(t),c=await f.lesson(0,'present');
+ assert.equal((await f.store.attendanceExport(f.admin.user_id,'amavale',f.dates[0],f.dates[7])).length,1);
+ await f.store.cancelClass(f.teacher.user_id,c.id,{cancelled:true,reason:'Aula cancelada para teste'});
+ assert.equal((await f.store.attendanceExport(f.admin.user_id,'amavale',f.dates[0],f.dates[7])).length,0);
+ await f.store.cancelClass(f.teacher.user_id,c.id,{cancelled:false,reason:'Aula reaberta após conferência'});
+ assert.equal((await f.store.attendanceExport(f.admin.user_id,'amavale',f.dates[0],f.dates[7])).length,1);
+});
+
+test('Turma nova não inventa chamadas anteriores ao cadastro; aulas históricas abertas continuam verificáveis',async t=>{
+ const f=await fixture(t),db=new DatabaseSync(path.join(f.dir,'portal.sqlite'));
+ try{
+  db.prepare("UPDATE attendance_monitor_settings SET value=? WHERE key='start_day'").run(f.dates[0]);
+  f.store.checkRollcalls(new Date(localDay()+'T23:59:00-03:00'));
+  assert.equal(db.prepare('SELECT count(*) n FROM rollcall_issues WHERE day<?').get(localDay()).n,0);
+  await f.lesson(0);
+  f.store.checkRollcalls(new Date(localDay()+'T23:59:00-03:00'));
+  assert.equal(db.prepare('SELECT count(*) n FROM rollcall_issues WHERE day=? AND group_id=?').get(f.dates[0],f.group.id).n,1);
+ }finally{db.close()}
+});
+
+test('Migração de turma preserva vínculos, versões e o monitoramento de turmas antigas',async t=>{
+ const f=await fixture(t),db=new DatabaseSync(path.join(f.dir,'portal.sqlite'));
+ db.exec('ALTER TABLE class_groups DROP COLUMN created_day');db.close();f.reopen();
+ const before=await f.store.group(f.admin.user_id,f.group.id);
+ assert.equal(before.created_day,'');assert.deepEqual(before.teachers,[f.teacher.user_id]);assert.equal(before.students.filter(s=>s.enrolled).length,2);
+ const updated=await f.store.saveGroup(f.admin.user_id,f.group.id,{...f.data,version:before.version,created_day:'2099-01-01'});
+ assert.equal(updated.created_day,'');assert.equal(updated.version,before.version+1);
+ f.reopen();assert.equal((await f.store.group(f.admin.user_id,f.group.id)).created_day,'');
+});
 test('Relatórios e contatos: responsáveis e professores bloqueados; profissionais limitados ao núcleo',async t=>{
  const f=await fixture(t),care=await f.care('psychologist'),other=await f.care('social_worker','valparaiso');for(let i=0;i<3;i++)await f.lesson(i,'absent');const a=(await f.store.attendanceAlerts(f.admin.user_id))[0];
  for(const user of [f.teacher,f.guardian]){const token=await f.login(user.email);for(const url of ['/attendance-report/options','/attendance-alerts','/attendance-alerts/'+a.id,'/attendance-report.xlsx?from='+f.dates[0]+'&to='+f.dates[7]])assert.equal((await f.request(token,url)).status,403)}
@@ -77,6 +108,6 @@ test('Migração preserva o professor único do núcleo; retirada manual não é
 });
 
 test('Chamada atrasada envia email somente à secretaria e administradores; não duplica após reinício',async t=>{
- const f=await fixture(t);await f.care('psychologist');const db=new DatabaseSync(path.join(f.dir,'portal.sqlite')),yesterday=f.dates.at(-1);db.prepare("UPDATE attendance_monitor_settings SET value=? WHERE key='start_day'").run(yesterday);db.close();
+ const f=await fixture(t);await f.care('psychologist');const db=new DatabaseSync(path.join(f.dir,'portal.sqlite')),yesterday=f.dates.at(-1);db.prepare("UPDATE attendance_monitor_settings SET value=? WHERE key='start_day'").run(yesterday);db.prepare('UPDATE class_groups SET created_day=?').run(yesterday);db.close();
  await f.store.deliverRollcallNotices();const first=f.mail.length;assert.ok(first>=4);assert.ok(f.mail.every(m=>[f.admin.email,f.sec.email].includes(m.to[0])&&m.subject.includes('Chamada pendente')&&!m.text.includes('Aluno Alfa')));f.reopen();await f.store.deliverRollcallNotices();assert.equal(f.mail.length,first);
 });
