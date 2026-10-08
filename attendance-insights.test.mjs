@@ -15,7 +15,7 @@ import {excelWorkbook} from './excel-export.mjs';
 async function fixture(t,options={}){
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'lpc-attendance-')),mail=[],env={PORTAL_DATA_DIR:dir,PORTAL_SECRET:'test-only-'.repeat(5),BOOTSTRAP_ADMIN_EMAIL:'admin@example.test',RESEND_API_KEY:'fake',MAIL_FROM:'sender@example.test',PUBLIC_ORIGIN:'https://test.example'};
  const transport=async(u,o)=>{mail.push({url:u,...JSON.parse(o.body),key:o.headers['Idempotency-Key']});return options.transport?options.transport(u,o):Response.json({id:randomUUID()})};let store=createSqliteStore(env,{transport});
- t.after(()=>{store.close();fs.rmSync(dir,{recursive:true,force:true})});const admin=(await store.members())[0],sec=await store.provision('secretary@example.test','secretary'),guardian=await store.provision('guardian@example.test','guardian');
+ t.after(()=>{store.close();fs.rmSync(dir,{recursive:true,force:true})});const owner=(await store.members())[0];const initialPolicy=await store.rollcallSettings(owner.user_id);if(!options.keepDefaultPolicy)await store.saveRollcallSettings(owner.user_id,{...initialPolicy,grace_minutes:60});const admin=(await store.members())[0],sec=await store.provision('secretary@example.test','secretary'),guardian=await store.provision('guardian@example.test','guardian');
  const pupils=[{id:'UND1_000001',name:'Aluno Alfa Fictício',birth_date:'2018-01-01',status:'approved',version:0},{id:'UND1_000002',name:'Aluno Beta Fictício',birth_date:'2017-02-02',status:'approved',version:0},{id:'UND2_000001',name:'Outro Núcleo Fictício',birth_date:'2018-03-03',status:'approved',version:0}];await store.import(admin.user_id,pupils);
  const teacher=await store.saveTeacher(admin.user_id,null,{name:'Professor Fictício',email:'teacher@example.test',phone:'24999999999',status:'pending',test_access:true,units:['amavale'],version:0});
  const data={unit:'amavale',label:'Turma A',weekdays:[0,1,2,3,4,5,6],start_time:'15:00',end_time:'16:00',active:true,students:pupils.slice(0,2).map(s=>s.id),teachers:[teacher.user_id],version:0};
@@ -123,7 +123,7 @@ test('Regras de chamada editáveis: limites, concorrência, persistência e perm
  assert.equal((await f.request(adminToken,'/rollcall-settings','POST',{...p,grace_minutes:-1})).status,400);
  assert.equal((await f.request(adminToken,'/rollcall-settings','POST',{...p,teacher_email:'true'})).status,400);
  const saved=await f.store.saveRollcallSettings(f.admin.user_id,{...p,grace_minutes:15,repeat_hours:48,max_notices:3});
- assert.equal(saved.version,1);await assert.rejects(f.store.saveRollcallSettings(f.admin.user_id,p),{status:409});f.reopen();assert.equal((await f.store.rollcallSettings(f.admin.user_id)).grace_minutes,15);
+ assert.equal(saved.version,p.version+1);await assert.rejects(f.store.saveRollcallSettings(f.admin.user_id,p),{status:409});f.reopen();assert.equal((await f.store.rollcallSettings(f.admin.user_id)).grace_minutes,15);
 });
 
 test('Prazo configurável, isolamento do professor e conclusão imediata sem inventar faltas',async t=>{
@@ -192,4 +192,25 @@ test('Servidor sem email mantém a pendência visível sem afirmar envio',async 
  const f=await fixture(t);f.env.RESEND_API_KEY='';const clock=new Date(localDay()+'T19:00:00-03:00');await f.store.deliverRollcallNotices(clock);
  assert.equal(f.mail.length,0);assert.equal((await f.store.rollcallSettings(f.admin.user_id)).mail_configured,false);
  const rows=await f.store.rollcallIssues(f.teacher.user_id,{},clock);assert.equal(rows.length,1);assert.equal(rows[0].notifications[0].status,'pending');assert.equal(rows[0].notifications[0].send_count,0);
+});
+
+test('Prazo inicial de 12 horas atravessa a meia-noite e não envia lembrete antecipado',async t=>{
+ const f=await fixture(t,{keepDefaultPolicy:true}),p=await f.store.rollcallSettings(f.admin.user_id);assert.equal(p.grace_minutes,720);
+ const before=new Date(localDay()+'T23:59:00-03:00');await f.store.deliverRollcallNotices(before);assert.equal(f.mail.length,0);
+ assert.equal((await f.store.rollcallIssues(f.teacher.user_id,{},before)).length,0);
+ const nextDay=new Date(+new Date(localDay()+'T12:00:00Z')+86400000).toISOString().slice(0,10);
+ const boundary=new Date(nextDay+'T04:00:00-03:00');await f.store.deliverRollcallNotices(boundary);assert.equal(f.mail.length,0);
+ assert.equal((await f.store.rollcallIssues(f.teacher.user_id,{},boundary)).length,1);
+ await f.store.deliverRollcallNotices(new Date(nextDay+'T08:00:00-03:00'));assert.equal(f.mail.filter(m=>m.to[0]===f.teacher.email).length,1);
+ // Increasing the grace period also postpones an already-created occurrence.
+ await f.store.saveRollcallSettings(f.admin.user_id,{...p,grace_minutes:1440});
+ const rows=await f.store.rollcallIssues(f.teacher.user_id,{},new Date(nextDay+'T08:01:00-03:00'));assert.equal(rows[0].within_grace,true);
+});
+
+test('Nova tentativa preserva o conteúdo enviado mesmo com progresso parcial da chamada',async t=>{
+ let failed=true;const f=await fixture(t,{transport:async()=>{if(failed)throw Error('tempo esgotado');return Response.json({id:randomUUID()})}}),clock=new Date(localDay()+'T19:00:00-03:00');
+ await f.store.deliverRollcallNotices(clock);const before=f.mail.find(m=>m.to[0]===f.teacher.email);
+ const c=await f.store.createClass(f.teacher.user_id,{group_id:f.group.id,day:localDay()});await f.store.markAttendance(f.teacher.user_id,c.id,[{id:f.pupils[0].id,status:'present',version:0}]);
+ failed=false;await f.store.deliverRollcallNotices(new Date(+clock+300000));const after=f.mail.filter(m=>m.to[0]===f.teacher.email).at(-1);
+ assert.equal(after.key,before.key);assert.equal(after.text,before.text);
 });
