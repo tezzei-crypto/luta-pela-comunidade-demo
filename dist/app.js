@@ -14,6 +14,13 @@ if(current){
 }
 
 
+if(current?.slug==='amavale'){
+ document.querySelector('.detail-hero .lead').textContent='Jiu-jitsu gratuito para crianças e adolescentes na Arena Amavale, em Vale das Videiras, Petrópolis.';
+ document.querySelector('.detail-grid>div').innerHTML=`<p class="eyebrow red">NÚCLEO AMAVALE</p><h2>Uma turma, muitas possibilidades.</h2><p>A Arena Amavale recebe as aulas do Luta pela Comunidade. Aqui, crianças e adolescentes praticam jiu-jitsu, convivem e aprendem com a orientação da equipe do projeto.</p><h3>Dias e horários das aulas</h3><p><strong>Terças e quintas-feiras</strong></p><ul class="detail-list"><li><strong>Adolescentes, de 11 a 17 anos:</strong> das 15h às 16h.</li><li><strong>Infantil, de 5 a 10 anos:</strong> das 16h25 às 17h.</li></ul><p>Para informações sobre inscrição e vagas, fale com a secretaria.</p><a class="button" href="/contato/">Falar com a secretaria</a>`;
+ document.querySelector('.info-box').innerHTML=`<h3>Como chegar</h3><p><strong>Arena Amavale</strong></p><address>Estrada Almirante Paulo Meira, 8585<br>Vale das Videiras — Petrópolis/RJ<br>CEP 25725-029</address><p><a class="text-link" href="https://www.google.com/maps/search/?api=1&query=Arena%20Amavale%20Estrada%20Almirante%20Paulo%20Meira%208585%20Petropolis%20RJ" target="_blank" rel="noopener noreferrer">Abrir endereço no mapa ↗</a></p><p>Horários de Brasília. Confirme alterações e disponibilidade de vagas com a secretaria.</p>`;
+ const photos=document.createElement('section');photos.className='section amavale-gallery';photos.setAttribute('aria-labelledby','amavale-photos-title');photos.innerHTML=`<p class="eyebrow red">NO NOSSO TATAME</p><h2 id="amavale-photos-title">A vida no núcleo Amavale</h2><p>Registros das turmas e das atividades na Arena Amavale.</p><div class="amavale-photo-grid"><figure><img src="/amavale-infantil.jpeg" alt="Turma infantil e equipe reunidas no tatame da Arena Amavale" width="1511" height="886" loading="lazy" decoding="async"><figcaption>Turma infantil e equipe do núcleo.</figcaption></figure><figure><img src="/amavale-adolescentes.jpeg" alt="Turma de adolescentes e equipe reunidas na Arena Amavale" width="2048" height="1537" loading="lazy" decoding="async"><figcaption>Convivência e aprendizado na turma de adolescentes.</figcaption></figure><figure><img src="/amavale-pratica.jpeg" alt="Alunos praticando uma técnica no tatame com a turma ao redor" width="900" height="1600" loading="lazy" decoding="async"><figcaption>Prática de jiu-jitsu durante a aula.</figcaption></figure><figure><img src="/amavale-aula.jpeg" alt="Alunos reunidos no tatame durante orientação do professor" width="967" height="1280" loading="lazy" decoding="async"><figcaption>Orientação e atenção em grupo.</figcaption></figure></div>`;document.querySelector('.other-units').before(photos);
+}
+
 // Accessible disclosure navigation: screen size, never user-agent redirects.
 const siteHeader=document.querySelector('.header');
 const siteNav=siteHeader.querySelector('nav');
@@ -31,6 +38,7 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&siteHeader.classLis
 const desktopLayout=matchMedia('(min-width:1101px)');
 desktopLayout.addEventListener('change',()=>{closeNavigation();closeUnits()});
 const metricsScript=document.createElement('script');metricsScript.src='/metrics.js';metricsScript.defer=true;document.head.append(metricsScript);
-const staffLink=document.createElement('a');staffLink.href='/administracao/';staffLink.textContent='Área da equipe';staffLink.className='text-link';document.querySelector('footer')?.append(staffLink);
-
-const teacherLink=document.createElement('a');teacherLink.href='/professor/';teacherLink.textContent='Área do professor';teacherLink.className='text-link';document.querySelector('footer')?.append(teacherLink);
+const staffAccess=document.createElement('nav');staffAccess.className='staff-access';staffAccess.setAttribute('aria-label','Acessos da equipe do projeto');
+for(const [url,label]of [['/administracao/','Área da equipe'],['/professor/','Área do professor'],['/psicologia/','Área da psicóloga'],['/assistencia-social/','Área da assistente social']]){const link=document.createElement('a');link.href=url;link.textContent=label;staffAccess.append(link)}
+document.querySelector('footer')?.append(staffAccess);
+const secretaryContactScript=document.createElement('script');secretaryContactScript.src='/contact-widget.js';secretaryContactScript.defer=true;document.head.append(secretaryContactScript);
