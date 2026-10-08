@@ -1,3 +1,4 @@
+import {handleAttendanceInsights} from './attendance-insights-handler.mjs';
 import {requireRouteAccess} from './portal-permissions.mjs';
 import {handleWorkforce} from './workforce-handler.mjs';
 import {handleProfessionals} from './professional-handler.mjs';
@@ -46,6 +47,8 @@ export async function handlePortal(req,env=process.env,injectedStore){
   const role=member.role,actor=user.id,staff=['admin','secretary'].includes(role);
   const requireRole=(...roles)=>{if(!roles.includes(role))fail('Acesso não permitido.',403)};
   requireRouteAccess(role,route,method);
+  if(route==='/contact-settings'){requireRole('admin','secretary');if(method==='GET')return json({settings:await store.contactSettings(actor)});if(method==='PATCH')return json({settings:await store.saveContactSettings(actor,await body()),message:'Contato da secretaria atualizado no site.'});}
+  const attendanceInsights=await handleAttendanceInsights({req,route,method,url,store,actor});if(attendanceInsights)return attendanceInsights;
   const workforce=await handleWorkforce({req,route,method,url,store,actor});if(workforce)return workforce;
   const linked=(await store.links(actor)).map(l=>l.student_id);
   const student=async id=>{
@@ -103,6 +106,7 @@ export async function handlePortal(req,env=process.env,injectedStore){
    requireRole('admin','secretary','teacher');const rows=await store.attendanceExport(actor,url.searchParams.get('unit'),url.searchParams.get('from'),url.searchParams.get('to'));
    return new Response(csv(rows,['date','time','class','unit','student_id','name','status','version','updated_at']),{headers:{...privateHeaders,'Content-Type':'text/csv; charset=utf-8','Content-Disposition':'attachment; filename="presencas.csv"'}});
   }
+  const cancelMatch=route.match(/^\/classes\/([0-9a-f-]{36})\/cancellation$/i);if(cancelMatch&&method==='POST')return json({lesson:await store.cancelClass(actor,cancelMatch[1],await body()),message:'Situação da aula atualizada.'});
   const classMatch=route.match(/^\/classes\/([0-9a-f-]+)\/attendance$/i);
   if(classMatch){requireRole('admin','secretary','teacher');if(!uuid(classMatch[1]))fail('Aula inválida.');if(method==='GET')return json(await store.attendance(actor,classMatch[1]));if(method==='POST'){await store.markAttendance(actor,classMatch[1],(await body()).rows);return json({message:'Chamada salva.'})}}
   const appointmentMatch=route.match(/^\/students\/(UND[1-3]_\d{6})\/appointment$/);
@@ -169,6 +173,7 @@ export async function handlePortal(req,env=process.env,injectedStore){
   }
   if(route==='/import/preview'&&method==='POST'){
    requireRole('admin','secretary');const rows=parseCsv((await body()).csv),existing=new Map((await store.students()).map(r=>[r.id,r]));
+   for(const r of rows)if(!existing.has(r.id))fail('Novos alunos recebem ID automático na aprovação em Candidatos. Use o CSV apenas para atualizar IDs já cadastrados.');
    for(const r of rows)if((existing.get(r.id)?.version||0)!==r.version)fail(`Versão desatualizada: ${r.id}. Exporte um CSV novo.`,409);
    const token=signPreview({actor,rows,expires:Date.now()+600000},env.PORTAL_SECRET);
    return json({token,rows:rows.map(r=>({id:r.id,name:r.name,action:existing.has(r.id)?'Atualizar':'Criar'}))});
@@ -176,6 +181,7 @@ export async function handlePortal(req,env=process.env,injectedStore){
   if(route==='/import/commit'&&method==='POST'){
    requireRole('admin','secretary');const rows=readPreview((await body()).token,env.PORTAL_SECRET,actor);
    if(!Array.isArray(rows)||!rows.length||rows.length>500)fail('Prévia inválida.');
+   const existingIds=new Set((await store.students()).map(r=>r.id));if(rows.some(r=>!existingIds.has(r.id)))fail('Novos alunos devem ser aprovados em Candidatos para gerar um ID automático.');
    await store.import(actor,rows.map(r=>validateStudent(r)));return json({message:`${rows.length} fichas importadas. Nenhum aluno ausente do CSV foi apagado.`});
   }
   if(route==='/staff-accounts'&&method==='GET'){requireRole('admin','secretary');return json({accounts:await store.staffAccounts(actor)})}

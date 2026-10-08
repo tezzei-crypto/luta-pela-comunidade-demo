@@ -1,3 +1,6 @@
+import {contactSettings} from './contact-settings.mjs';
+import {attendanceInsights} from './attendance-insights.mjs';
+import {rollcallTools} from './rollcall-tools.mjs';
 import {staffAccounts} from './staff-accounts.mjs';
 import {workforceTools} from './workforce-tools.mjs';
 import {professionalTools} from './professional-tools.mjs';
@@ -49,9 +52,13 @@ export function createSqliteStore(env,{transport=fetch}={}){
  const asRegistration=r=>r?{...r,documents:JSON.parse(r.documents)}:undefined;
  function objectPath(key){if(typeof key!=='string'||!key||key.split('/').some(p=>!p||p==='.'||p==='..'||!/^[a-zA-Z0-9_.-]+$/.test(p)))fail('Arquivo inválido.');const full=path.resolve(objects,...key.split('/'));if(!full.startsWith(objects+path.sep))fail('Arquivo inválido.');return full}
  const teaching=teacherTools({db,get,all,run,tx,requireRole,audit});
- const project=projectTools({db,get,all,run,tx,requireRole,audit,requireUnit:teaching.requireUnit});
+ let insights;
+ const project=projectTools({db,get,all,run,tx,requireRole,audit,requireUnit:teaching.requireUnit,onAttendanceChanged:()=>insights?.attendanceReconcile()});
  const professionals=professionalTools({db,get,all,run,tx,requireRole,audit});
  const scheduling=schedulingTools({db,get,all,run,tx,requireRole,audit,...professionals});
+ insights=attendanceInsights({db,get,all,run,tx,requireRole,audit,env,transport});
+ const rollcalls=rollcallTools({db,get,all,run,tx,requireRole,audit,env,transport});
+ db.exec('CREATE TABLE IF NOT EXISTS student_sequences(prefix TEXT PRIMARY KEY,last_number INTEGER NOT NULL CHECK(last_number BETWEEN 0 AND 999999))');
  const initial=env.BOOTSTRAP_ADMIN_EMAIL?.trim().toLowerCase();
  if(initial&&emailValid(initial)&&!get("SELECT user_id FROM members WHERE role='admin'")){
   if(get('SELECT user_id FROM members WHERE email=?',initial))throw Error('A conta inicial já existe sem função administrativa; confira a configuração.');
@@ -72,7 +79,7 @@ export function createSqliteStore(env,{transport=fetch}={}){
   }return rows.length;
  })}
  const api={
-  ...staffAccounts({db,get,all,run,tx,requireRole,audit}),...project,...teaching,...professionals,...scheduling,...workforceTools({db,get,all,run,tx,requireRole,audit}),...studentDetails({db,get,all,run,tx,requireRole,audit}),
+  ...contactSettings({db,get,run,tx,requireRole,audit}),...insights,...rollcalls,...staffAccounts({db,get,all,run,tx,requireRole,audit}),...project,...teaching,...professionals,...scheduling,...workforceTools({db,get,all,run,tx,requireRole,audit}),...studentDetails({db,get,all,run,tx,requireRole,audit}),
   async sendBookingNotice(actor,id){const n=await scheduling.claimBookingNotice(actor,id);if(!n)return;let sent=false;try{if(!env.RESEND_API_KEY||!env.MAIL_FROM)throw Error('Email indisponível');const to=[...new Set([n.email,env.BOOTSTRAP_ADMIN_EMAIL].filter(emailValid))];const r=await transport('https://api.resend.com/emails',{method:'POST',headers:{Authorization:'Bearer '+env.RESEND_API_KEY,'Content-Type':'application/json','Idempotency-Key':'booking-'+id},body:JSON.stringify({from:env.MAIL_FROM,to,subject:'Nova solicitação na agenda — Luta pela Comunidade',text:'Há uma nova solicitação de atendimento no portal privado.\nProtocolo: '+id+'\nConsulte os detalhes na área Agenda após entrar com seu email. A secretaria deve confirmar com a família por WhatsApp.\n'+(env.PUBLIC_ORIGIN||env.RENDER_EXTERNAL_URL||'')+'/portal/#schedule-area'}),signal:AbortSignal.timeout(15000)});sent=r.ok&&!!(await r.json()).id}catch{}await scheduling.bookingNoticeResult(id,sent)},
   close:()=>db.close(),
   async requestCode(email){
@@ -137,11 +144,14 @@ export function createSqliteStore(env,{transport=fetch}={}){
    let sid=null;
    if(p.decision==='approved'){
     if(p.checked!==true)fail('Confirme a conferência documental.');const prefix={amavale:'UND1_',valparaiso:'UND2_','vale-do-carangola':'UND3_'}[r.unit];if(!prefix)fail('Núcleo inválido.');
-    if(p.existing_student_id){const old=get('SELECT * FROM students WHERE id=?',p.existing_student_id);if(!old||old.birth_date!==r.birth_date||!old.id.startsWith(prefix)||old.status!=='approved')fail('Confira o ID existente e a identidade do aluno.',409);sid=old.id}
+    const normalized=s=>s.normalize('NFD').replace(/\p{Diacritic}/gu,'').toLowerCase().trim().replace(/\s+/g,' ');
+    if(p.student_id||p.new_student_id)fail('O ID de aluno novo é gerado somente pelo sistema.');
+    if(p.existing_student_id){const old=get('SELECT * FROM students WHERE id=?',p.existing_student_id);if(!old||normalized(old.name)!==normalized(r.student_name)||old.birth_date!==r.birth_date||!old.id.startsWith(prefix)||old.status!=='approved')fail('Confira o ID existente e a identidade do aluno.',409);sid=old.id}
     else{
-     const normalized=s=>s.normalize('NFD').replace(/\p{Diacritic}/gu,'').toLowerCase().trim().replace(/\s+/g,' ');
      if(all('SELECT name FROM students WHERE birth_date=? AND id LIKE ?',r.birth_date,prefix+'%').some(s=>normalized(s.name)===normalized(r.student_name)))fail('Possível duplicata. Confira e vincule o ID existente.',409);
-     const next=Number(get('SELECT COALESCE(MAX(CAST(substr(id,6) AS INTEGER)),0)+1 AS n FROM students WHERE id LIKE ?',prefix+'%').n);if(next>999999)fail('Faixa de IDs esgotada.');
+     const highest=Number(get('SELECT COALESCE(MAX(CAST(substr(id,6) AS INTEGER)),0) AS n FROM students WHERE id LIKE ?',prefix+'%').n);
+     const next=Math.max(highest,get('SELECT last_number FROM student_sequences WHERE prefix=?',prefix)?.last_number||0)+1;if(next>999999)fail('Faixa de IDs esgotada.');
+     run('INSERT INTO student_sequences VALUES(?,?) ON CONFLICT(prefix) DO UPDATE SET last_number=excluded.last_number',prefix,next);
      sid=prefix+String(next).padStart(6,'0');const newRow=validateStudent({id:sid,name:r.student_name,birth_date:r.birth_date,status:'approved',version:0});
      run('INSERT INTO students(id,name,birth_date,status,updated_at) VALUES(?,?,?,?,?)',sid,newRow.name,newRow.birth_date,'approved',nowIso());
     }

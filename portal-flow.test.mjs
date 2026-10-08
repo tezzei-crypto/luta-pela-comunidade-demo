@@ -22,16 +22,16 @@ async function fixture(t){
  return {env,store,admin,request,login};
 }
 test('Fluxo integrado: CSV, ficha, medidas, documentos privados e logout',async t=>{
- const {request}=await fixture(t);
- const preview=await request('/import/preview',{method:'POST',data:{csv:csv([pupil])}});assert.equal(preview.status,200);
+ const {request,store,admin}=await fixture(t);await store.import(admin.user_id,[pupil]);
+ const preview=await request('/import/preview',{method:'POST',data:{csv:csv([{...pupil,version:1}])}});assert.equal(preview.status,200);
  const commit=await request('/import/commit',{method:'POST',data:{token:(await preview.json()).token}});assert.equal(commit.status,200);
  const profile=(await (await request('/students/'+pupil.id)).json()).student;assert.equal(profile.name,pupil.name);assert.equal(typeof profile.age,'number');
- assert.equal((await request('/students/'+pupil.id,{method:'PATCH',data:{version:1,weight_kg:'32,5',height_cm:142,kimono:'M2'}})).status,200);
+ assert.equal((await request('/students/'+pupil.id,{method:'PATCH',data:{version:2,weight_kg:'32,5',height_cm:142,kimono:'M2'}})).status,200);
  const file=new FormData();file.set('kind','report_card');file.set('file',new Blob(['%PDF-1.7\nfictitious test\n%%EOF'],{type:'application/pdf'}),'boletim-teste.pdf');
  const uploaded=await request('/students/'+pupil.id+'/documents',{method:'POST',form:file});assert.equal(uploaded.status,201);const id=(await uploaded.json()).id;
  const docs=await (await request('/students/'+pupil.id+'/documents')).json();assert.equal(docs.documents.length,1);assert.equal(docs.documents[0].object_path,undefined);
  const download=await request('/documents/'+id+'/download');assert.equal(download.status,200);assert.match(download.headers.get('content-disposition'),/^attachment/);assert.match(await download.text(),/fictitious test/);
- const exported=parseCsv(await (await request('/export.csv')).text());assert.equal(exported[0].weight_kg,32.5);assert.equal(exported[0].version,2);
+ const exported=parseCsv(await (await request('/export.csv')).text());assert.equal(exported[0].weight_kg,32.5);assert.equal(exported[0].version,3);
  assert.equal((await request('/auth/logout',{method:'POST',data:{}})).status,200);assert.equal((await request('/students')).status,401);
 });
 test('Fluxo integrado: secretaria cadastra responsável; acesso depende do vínculo',async t=>{
@@ -104,7 +104,8 @@ test('Professor: aprovação documental, unidades limitadas e nenhuma ficha priv
  const roster=(await (await request('/unit-roster?unit=amavale',{token})).json()).students;assert.equal(roster.length,1);assert.equal(roster[0].birth_date,undefined);assert.equal(roster[0].name,pupil.name);
  for(const route of ['/unit-roster?unit=valparaiso','/students/'+pupil.id,'/export.csv','/documents.csv','/registrations','/audit','/dashboard'])assert.equal((await request(route,{token})).status,403,route);
  assert.equal((await request('/classes',{token,method:'POST',data:{unit:'valparaiso',day:'2020-01-01',time:'18:00',label:'Aula'}})).status,403);
- const lesson=(await (await request('/classes',{token,method:'POST',data:{unit:'amavale',day:'2020-01-01',time:'18:00',label:'Aula'}})).json()).lesson;
+ const group=await store.saveGroup(admin.user_id,null,{unit:'amavale',label:'Aula vinculada',weekdays:[3],start_time:'18:00',end_time:'19:00',active:true,version:0,students:[pupil.id],teachers:[teacher.user_id]});
+ const lesson=(await (await request('/classes',{token,method:'POST',data:{group_id:group.id,day:'2020-01-01'}})).json()).lesson;
  assert.equal((await request('/classes/'+lesson.id+'/attendance',{token,method:'POST',data:{rows:[{id:pupil.id,status:'present',version:0}]}})).status,200);
  const other=(await (await request('/classes',{method:'POST',data:{unit:'valparaiso',day:'2020-01-01',time:'18:00',label:'Aula'}})).json()).lesson;
  assert.equal((await request('/classes/'+other.id+'/attendance',{token})).status,403);

@@ -19,6 +19,19 @@ async function fixture(t){
 }
 const registration=()=>({id:randomUUID(),student_name:'Novo Aluno Fictício',birth_date:'2015-02-10',unit:'amavale',guardian_name:'Responsável Fictício',guardian_email:'guardian@example.test',guardian_phone:'24999999999',relationship:'Mãe'});
 const attachments=()=>[{filename:'photo.jpg',content:Buffer.from([255,216,255,0]).toString('base64')},{filename:'studentDocument.pdf',content:Buffer.from('%PDF-1.7 teste').toString('base64')}];
+test('IDs automáticos: sequências independentes por núcleo, concorrência e proibição de ID manual',async t=>{
+ const {store,admin}=await fixture(t);await store.import(admin.user_id,[pupil]);
+ const entries=[{...registration(),student_name:'Pessoa A Fictícia'},{...registration(),student_name:'Pessoa B Fictícia'},{...registration(),student_name:'Pessoa C Fictícia',unit:'valparaiso'},{...registration(),student_name:'Pessoa D Fictícia',unit:'vale-do-carangola'}];
+ for(const r of entries)await persistRegistration(store,r,attachments());
+ const decision={version:1,decision:'approved',reason:'Conferência fictícia',checked:true};
+ await assert.rejects(store.reviewRegistration(admin.user_id,entries[0].id,{...decision,student_id:'UND1_999999'}),{status:400});
+ const approved=await Promise.all(entries.map(r=>store.reviewRegistration(admin.user_id,r.id,decision)));assert.deepEqual(approved.map(r=>r.student_id),['UND1_000080','UND1_000081','UND2_000001','UND3_000001']);assert.equal((await store.student(pupil.id)).name,pupil.name);
+});
+test('Vínculo existente não aceita outra pessoa com o mesmo nascimento e não consome ID em falha',async t=>{
+ const {store,admin}=await fixture(t);const r=registration();await store.import(admin.user_id,[{...pupil,birth_date:r.birth_date}]);await persistRegistration(store,r,attachments());
+ await assert.rejects(store.reviewRegistration(admin.user_id,r.id,{version:1,decision:'approved',reason:'Teste',checked:true,existing_student_id:pupil.id}),{status:409});assert.equal((await store.student(pupil.id)).name,pupil.name);
+ assert.equal((await store.reviewRegistration(admin.user_id,r.id,{version:1,decision:'approved',reason:'Teste',checked:true})).student_id,'UND1_000080');
+});
 test('SQLite: importação atômica, controle de versão e persistência em outra conexão',async t=>{
  const {store,admin,env}=await fixture(t);await store.import(admin.user_id,[pupil]);
  await assert.rejects(store.import(admin.user_id,[{...pupil,version:1,name:'Não deve persistir'},{...pupil,id:'UND1_000080',version:3}]),e=>e.status===409);
