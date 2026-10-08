@@ -69,7 +69,7 @@ export async function handlePortal(req,env=process.env,injectedStore){
    requireRole('admin','secretary');const days=Number(url.searchParams.get('days')||30);if(![7,30,90].includes(days))fail('Período inválido.');
    const result=await store.dashboard(actor,days);
    // Administrators and the secretary share the management dashboard.
-   return json({...result,metrics_enabled:staff&&!!metricsEnabled(env),intake_enabled:env.PORTAL_INTAKE_ACTIVE==='true',registry_active:env.PORTAL_REGISTRY_ACTIVE==='true'});
+   return json({...result,metrics_enabled:staff&&!!metricsEnabled(env),intake_enabled:env.PORTAL_INTAKE_ACTIVE==='true',registry_active:usesPortalRegistry(env)});
   }
   if(route==='/audit'&&method==='GET'){requireRole('admin','secretary');return json({events:await store.auditLog()})}
   if(route==='/registrations'&&method==='GET'){
@@ -215,3 +215,4 @@ export async function handlePortal(req,env=process.env,injectedStore){
   return json({message:'Operação não encontrada.'},404);
  }catch(e){return json({message:e.status?e.message:'Não foi possível concluir. Tente novamente.'},e.status||500)}
 }
+import {usesPortalRegistry} from './access-handler.mjs';
