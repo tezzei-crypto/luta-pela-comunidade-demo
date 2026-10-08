@@ -44,6 +44,12 @@ export function createSqliteStore(env,{transport=fetch}={}){
  const db=new DatabaseSync(path.join(root,'portal.sqlite'));db.exec(schema);migrateMembers(db);db.function('br_day',{deterministic:true},dayOf);
  const get=(sql,...params)=>db.prepare(sql).get(...params),all=(sql,...params)=>db.prepare(sql).all(...params),run=(sql,...params)=>db.prepare(sql).run(...params);
  function tx(fn){db.exec('BEGIN IMMEDIATE');try{const r=fn();db.exec('COMMIT');return r}catch(e){db.exec('ROLLBACK');throw e}}
+ // Upgrade only live one-hour sessions once. Expired and revoked sessions stay invalid.
+ db.exec('CREATE TABLE IF NOT EXISTS auth_migrations(name TEXT PRIMARY KEY)');
+ tx(()=>{if(!get('SELECT 1 FROM auth_migrations WHERE name=?','session_six_hours_v1')){
+  run('UPDATE sessions SET expires=expires+? WHERE expires>?',5*3600000,Date.now());
+  run('INSERT INTO auth_migrations VALUES(?)','session_six_hours_v1');
+ }});
  const asMember=m=>m?{...m,active:!!m.active}:undefined;
  const member=id=>asMember(get('SELECT * FROM members WHERE user_id=? AND active=1',id));
  const requireRole=(actor,roles)=>{const m=member(actor);if(!m||!roles.includes(m.role))fail('Acesso não permitido.',403);return m};
@@ -100,9 +106,9 @@ export function createSqliteStore(env,{transport=fetch}={}){
    run('UPDATE challenges SET attempts=attempts+1 WHERE email=?',email);
    const hash=createHmac('sha256',env.PORTAL_SECRET).update(email+':'+c.nonce+':'+code).digest('hex');
    if(!timingSafeEqual(Buffer.from(hash),Buffer.from(c.hash)))fail('Código inválido ou expirado.',401);
-   const token=randomBytes(32).toString('base64url');tx(()=>{run('UPDATE challenges SET expires=0 WHERE email=?',email);run('DELETE FROM sessions WHERE expires<?',now);run('INSERT INTO sessions(hash,user_id,expires) VALUES(?,?,?)',sha(token),m.user_id,now+3600000);audit(m.user_id,'auth.login')});return {access_token:token,expires_in:3600};
+   const token=randomBytes(32).toString('base64url');tx(()=>{run('UPDATE challenges SET expires=0 WHERE email=?',email);run('DELETE FROM sessions WHERE expires<?',now);run('INSERT INTO sessions(hash,user_id,expires) VALUES(?,?,?)',sha(token),m.user_id,now+6*3600000);audit(m.user_id,'auth.login')});return {access_token:token,expires_in:6*3600};
   },
-  user:async token=>{const u=get('SELECT m.user_id AS id FROM sessions s JOIN members m ON m.user_id=s.user_id WHERE s.hash=? AND s.expires>? AND m.active=1',sha(token),Date.now());if(!u)fail('Sessão expirada.',401);return u},
+  user:async token=>{const u=get('SELECT m.user_id AS id,s.expires AS expires_at FROM sessions s JOIN members m ON m.user_id=s.user_id WHERE s.hash=? AND s.expires>? AND m.active=1',sha(token),Date.now());if(!u)fail('Sessão expirada.',401);return u},
   logout:async token=>run('DELETE FROM sessions WHERE hash=?',sha(token)),
   member:async id=>member(id),members:async()=>all('SELECT * FROM members ORDER BY email').map(asMember),
   links:async id=>all('SELECT student_id FROM links WHERE user_id=?',id),

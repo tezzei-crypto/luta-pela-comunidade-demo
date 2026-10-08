@@ -57,7 +57,7 @@ export async function handlePortal(req,env=process.env,injectedStore){
   };
   const roster=async()=>staff?store.students():linked.length?store.students(linked):[];
   if(route==='/auth/verify'&&method==='POST')return json({access_token:session.access_token,expires_in:session.expires_in,role,email:member.email});
-  if(route==='/me'&&method==='GET')return json({role,email:member.email,user_id:actor,...(role==='teacher'?{test_access:await store.teacherTestAccess(actor)}:{})});
+  if(route==='/me'&&method==='GET')return json({role,email:member.email,user_id:actor,session_expires_at:user.expires_at,...(role==='teacher'?{test_access:await store.teacherTestAccess(actor)}:{})});
   const professionals=await handleProfessionals({req,route,method,url,store,actor});if(professionals)return professionals;
   const details=await handleStudentDetails({req,route,method,store,actor});if(details)return details;
   const teaching=await handleTeaching({route,method,req,url,store,actor});if(teaching)return teaching;
