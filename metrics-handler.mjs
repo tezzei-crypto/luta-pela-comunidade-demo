@@ -1,3 +1,4 @@
+import {sameOrigin} from './request-origin.mjs';
 import {createHmac} from 'node:crypto';
 import {createStore} from './portal-store.mjs';
 export const PUBLIC_PAGES=['/','/inscricao/','/agendamento/','/patrocinar/','/unidades/amavale/','/unidades/valparaiso/','/unidades/vale-do-carangola/'];
@@ -8,7 +9,7 @@ export async function handleMetrics(request,env={},store){
  if(new URL(request.url).pathname==='/api/metrics-status'&&request.method==='GET')return reply(200,{enabled:!!metricsEnabled(env)});
  if(request.method!=='POST')return reply(405);
  if(!metricsEnabled(env))return reply(204);
- if(request.headers.get('origin')!==new URL(env.PUBLIC_ORIGIN||env.RENDER_EXTERNAL_URL||request.url).origin)return reply(403);
+ if(!sameOrigin(request,env))return reply(403);
  if(request.headers.get('sec-gpc')==='1'||request.headers.get('dnt')==='1'||/bot|crawler|spider|headless/i.test(request.headers.get('user-agent')||''))return reply(204);
  try{
   const raw=await request.text();if(Buffer.byteLength(raw)>1024)return reply(413);

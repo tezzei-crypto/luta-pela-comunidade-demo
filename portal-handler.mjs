@@ -1,3 +1,4 @@
+import {sameOrigin} from './request-origin.mjs';
 import {handleAttendanceInsights} from './attendance-insights-handler.mjs';
 import {requireRouteAccess} from './portal-permissions.mjs';
 import {handleWorkforce} from './workforce-handler.mjs';
@@ -22,8 +23,7 @@ export async function handlePortal(req,env=process.env,injectedStore){
   if(!enabled(env))return json({message:'O portal privado ainda está em configuração. O agendamento continua disponível.'},503);
   if(!['GET','POST','PATCH'].includes(method))return json({message:'Método não permitido.'},405);
   if(method!=='GET'){
-   const origin=env.PUBLIC_ORIGIN||env.RENDER_EXTERNAL_URL||url.origin;
-   if(req.headers.get('origin')!==new URL(origin).origin)fail('Origem não permitida.',403);
+   if(!sameOrigin(req,env))fail('Origem não permitida.',403);
   }
   const store=injectedStore||createStore(env);
   const body=async()=>{try{return await req.json()}catch{fail('Dados inválidos.')}};

@@ -1,3 +1,4 @@
+import {requestOrigin} from './request-origin.mjs';
 import {handleContact} from './contact-handler.mjs';
 import {initializePortal} from './portal-bootstrap.mjs';
 import {handleAccess} from './access-handler.mjs';
@@ -13,8 +14,7 @@ let attendanceJobRunning=false;
 async function attendanceJob(){if(attendanceJobRunning||!portalConfigured(process.env))return;attendanceJobRunning=true;try{const store=createStore(process.env);await store.deliverAttendanceNotices();await store.deliverRollcallNotices()}catch{console.error('Não foi possível concluir a verificação automática de frequência; nova tentativa em cinco minutos.')}finally{attendanceJobRunning=false}}
 setInterval(attendanceJob,300000).unref();setTimeout(attendanceJob,1000).unref();
 http.createServer(async(req,res)=>{
- const origin=new URL(process.env.PUBLIC_ORIGIN||process.env.RENDER_EXTERNAL_URL||`http://${req.headers.host}`).origin;
- let url;try{url=new URL(req.url,origin)}catch{res.writeHead(400).end();return}
+ let url;try{url=new URL(req.url,requestOrigin(req.headers.host,process.env))}catch{res.writeHead(400).end();return}
  const send=async response=>{res.writeHead(response.status,Object.fromEntries(response.headers));res.end(Buffer.from(await response.arrayBuffer()))};
  if(url.pathname==='/api/contact'||url.pathname==='/api/contact/whatsapp'){await send(await handleContact(new Request(url,{method:req.method}),process.env));return;}
  if(url.pathname==='/api/health'&&req.method==='GET'){
