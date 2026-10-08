@@ -15,7 +15,7 @@ export function workforceTools({db,get,all,run,tx,requireRole,audit}){
  const readMonitor=id=>{const m=get('SELECT * FROM monitors WHERE id=?',id);return m?{...m,active:!!m.active,units:all('SELECT unit FROM monitor_units WHERE monitor_id=? ORDER BY unit',id).map(r=>r.unit)}:null};
  const unitCheck=u=>{if(!UNITS.includes(u))fail('Núcleo inválido.')};
  const roster=unit=>[
-  ...all("SELECT 'teacher:'||p.user_id AS id,p.name,'teacher' AS role FROM teacher_profiles p JOIN members m USING(user_id) JOIN teacher_units u USING(user_id) WHERE m.active=1 AND m.role='teacher' AND p.status='verified' AND u.unit=?",unit),
+  ...all("SELECT 'teacher:'||p.user_id AS id,p.name,'teacher' AS role FROM teacher_profiles p JOIN members m USING(user_id) JOIN teacher_units u USING(user_id) WHERE m.active=1 AND m.role='teacher' AND (p.status='verified' OR p.test_access=1) AND u.unit=?",unit),
   ...all("SELECT 'monitor:'||p.id AS id,p.name,'monitor' AS role FROM monitors p JOIN monitor_units u ON u.monitor_id=p.id WHERE p.active=1 AND u.unit=?",unit)
  ].sort((a,b)=>a.name.localeCompare(b.name,'pt-BR'));
  function session(actor,id){requireRole(actor,managers);const s=get('SELECT * FROM workforce_sessions WHERE id=?',id);if(!s)fail('Chamada da equipe não localizada.',404);return s}
