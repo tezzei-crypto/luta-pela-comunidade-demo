@@ -44,9 +44,9 @@ export function csv(rows,cols=COLUMNS){
  const quote=v=>{let s=v===null||v===undefined?'':String(v);if(/^[\s]*[=+@-]/.test(s)||/^[\t\r\n]/.test(s))s="'"+s;return '"'+s.replace(/"/g,'""')+'"'};
  return '\uFEFF'+[cols,...rows.map(r=>cols.map(c=>r[c]))].map(r=>r.map(quote).join(';')).join('\r\n')+'\r\n';
 }
-export function canRead(role,linked){return role!=='teacher'&&(['admin','secretary'].includes(role)||linked)}
+export function canRead(role,linked){return ['admin','secretary'].includes(role)||role==='guardian'&&linked}
 export function canEdit(role){return ['admin','secretary','guardian'].includes(role)}
-export function canDocument(role,kind){return ['admin','secretary','guardian'].includes(role)||(role==='psychologist'&&['photo','report_card','medical_certificate'].includes(kind))||(role==='social_worker'&&['photo','report_card','consent'].includes(kind))}
+export function canDocument(role,kind){return ['admin','secretary','guardian'].includes(role)}
 export function fileType(bytes){if(bytes.subarray(0,5).toString()==='%PDF-')return ['application/pdf','pdf'];if(bytes[0]===255&&bytes[1]===216&&bytes[2]===255)return ['image/jpeg','jpg'];if(bytes.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])))return ['image/png','png'];fail('Use PDF, JPG ou PNG. O conteúdo do arquivo não corresponde a um formato aceito.');}
 export function signPreview(payload,key){const value=Buffer.from(JSON.stringify(payload)).toString('base64url');return value+'.'+createHmac('sha256',key).update(value).digest('base64url')}
 export function readPreview(token,key,userId){if(typeof token!=='string'||token.length>2000000||token.split('.').length!==2)fail('Prévia inválida.');const [v,sig]=token.split('.');const actual=Buffer.from(createHmac('sha256',key).update(v||'').digest('base64url'));const supplied=Buffer.from(sig||'');if(actual.length!==supplied.length||!timingSafeEqual(actual,supplied))fail('Prévia inválida.');let p;try{p=JSON.parse(Buffer.from(v,'base64url'))}catch{fail('Prévia inválida.')}if(p.actor!==userId||!Number.isFinite(p.expires)||p.expires<Date.now())fail('Prévia expirada. Valide o CSV novamente.',409);return p.rows;}

@@ -14,7 +14,7 @@ Site público e portal privado em HTML, CSS e JavaScript, com Node.js 24 e SQLit
 
 Requer serviço pago com disco persistente montado em /var/data. Configure PORTAL_DATA_DIR=/var/data/luta, PERSISTENT_STORAGE_CONFIRMED=true, PORTAL_SECRET com pelo menos 32 caracteres aleatórios, BOOTSTRAP_ADMIN_EMAIL e PUBLIC_ORIGIN. Configure RESEND_API_KEY e MAIL_FROM para os códigos de acesso e notificações. Nunca grave os valores secretos no repositório.
 
-O administrador inicial entra por código de uso único enviado ao email configurado. Responsáveis e profissionais só acessam alunos vinculados pela equipe. IDs públicos não autenticam uma pessoa nem expõem nomes e documentos.
+O administrador inicial entra por código de uso único enviado ao email configurado. Responsáveis só acessam alunos vinculados pela equipe. Professores, psicologia e assistência social têm menus e APIs limitados à sua função e aos núcleos conferidos. IDs públicos não autenticam uma pessoa nem expõem nomes e documentos.
 
 Importe o CSV inicial no portal ou com node portal-maintenance.mjs import /caminho/privado/alunos.csv. Preserve os IDs existentes. Ative PORTAL_REGISTRY_ACTIVE=true somente depois da conferência da importação. PORTAL_INTAKE_ACTIVE=true grava novas inscrições e arquivos no disco privado. METRICS_ENABLED=true oferece estatísticas opcionais nas páginas públicas, com consentimento.
 
@@ -36,8 +36,18 @@ O menu autenticado separa Alunos, Candidatos, Professores, Psicologia e assistê
 
 BOOTSTRAP_AMAVALE_GROUPS=true, junto do arquivo privado inicial, cadastra uma única vez as turmas autorizadas de terça/quinta: 11–17 anos às 15:00–16:00 e 5–10 anos às 16:25–17:00. Matrículas iniciais consideram a idade na data da implantação e somente os IDs da importação aprovada. Não altera matrícula em reinícios. Aniversários e novas aprovações exigem conferência da matrícula pela administração.
 
-Profissionais entram por código no email. RG/CPF e documentos só são acessíveis ao próprio profissional e à administração. A liberação exige conferência humana, foto, conselho atualizado e prazo de nova conferência. Novos documentos suspendem a oferta de horários até reconferência. Não há consulta automática aos conselhos.
+Profissionais entram por código no email. O cadastro, RG/CPF e documentos são gerenciados por administradores e secretaria. A liberação exige conferência humana, foto, conselho atualizado e prazo de nova conferência. Novos documentos suspendem a oferta de horários até reconferência. Não há consulta automática aos conselhos.
 
 Horários são explícitos, em Brasília, por núcleo. Reserva com transação SQLite, prevenção de sobreposição do profissional/aluno, idempotência e controle de versão. A secretaria confirma por WhatsApp e registra a confirmação. O sistema não envia WhatsApp automaticamente. Solicitações persistem mesmo com falha no aviso por email.
 
 Os formulários Ocorrência e Lesão usam os campos do modelo Relatorios_Jiu_Jitsu_FJJE_Rio, sem exigir upload do XLS e sem transformar relato em diagnóstico. O autor e horário são registrados; complementos preservam o original.
+
+## Equipe, permissões e frequência
+
+- `/administracao/#team-area`: Equipe e acessos, com cadastro de secretaria e administradores por nome completo, email e telefone. Somente administradores gerais gerenciam contas de outros administradores. A secretaria pode gerenciar outras contas de secretaria. Ninguém desativa a própria conta ou altera a própria função. Sessões e códigos são revogados quando o acesso muda; versões evitam perda de edições simultâneas.
+- Administradores e secretaria gerenciam alunos, candidatos, documentos, equipe, turmas, agenda, planilhas e histórico. Uma inscrição completa continua pendente até aprovação explícita; só então recebe ID.
+- Professor tem presença dos alunos e relatos de ocorrência/lesão nos núcleos autorizados. Consulta os próprios relatos; não acessa fichas privadas, cadastros, agenda ou chamada da equipe.
+- Psicologia e assistência social têm relatos dos núcleos autorizados e somente a própria agenda e solicitações. Não têm acesso ao cadastro privado dos alunos nem a agendas de outros profissionais.
+- Monitores têm cadastro administrativo com núcleos de atuação, sem criar login automaticamente. Frequência da equipe é lançada pela secretaria ou administração: selecionar turma, data e integrantes previstos, marcar e salvar em lote. Ausência de marcação não vira falta. Lista histórica, correções, autor, versão e CSV são preservados.
+
+O menu mobile recolhe após a escolha; botões de chamada têm pelo menos 48 px, campos usam fonte de 16 px e há confirmação do salvamento. Testes de largura não equivalem a certificação em aparelhos físicos. Fundamentação: autorização em cada requisição e menor privilégio (OWASP Authorization Cheat Sheet), tamanho de alvos e ampliação/refluxo (WCAG 2.2). A suíte automatizada usa somente dados fictícios e diretórios temporários.

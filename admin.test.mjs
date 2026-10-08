@@ -70,7 +70,7 @@ test('Métricas: permissão, escopo público, deduplicação e agregação real'
  assert.equal((await send(event,{'sec-gpc':'1'})).status,204);assert.equal((await store.dashboard(admin.user_id,30)).traffic.pageviews,0);
  await send();await send();await send({...event,eventId:randomUUID(),page:'/inscricao/'});
  const result=await store.dashboard(admin.user_id,30);assert.deepEqual([result.traffic.pageviews,result.traffic.sessions,result.traffic.visitors],[2,1,1]);assert.equal(result.daily.length,1);
- const secretary=await store.provision('secretary@example.test','secretary');assert.equal((await store.dashboard(secretary.user_id,30)).traffic,undefined);
+ const secretary=await store.provision('secretary@example.test','secretary');assert.equal((await store.dashboard(secretary.user_id,30)).traffic.pageviews,2);
 });
 test('API: responsável não acessa painel, inscrições, auditoria ou métricas',async t=>{
  const {store,env,mail}=await fixture(t);await store.provision('guardian@example.test','guardian');await store.requestCode('guardian@example.test');const session=await store.verifyCode('guardian@example.test',mail[0].text.match(/\b\d{8}\b/)[0]);

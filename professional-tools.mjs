@@ -13,14 +13,14 @@ export function professionalTools({db,get,all,run,tx,requireRole,audit}){
  CREATE TABLE IF NOT EXISTS professional_documents(id TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES professional_profiles(user_id),kind TEXT NOT NULL CHECK(kind IN ('photo','identity','council')),object_path TEXT UNIQUE NOT NULL,mime TEXT NOT NULL,size INTEGER NOT NULL,original_name TEXT NOT NULL,created_by TEXT NOT NULL REFERENCES members(user_id),created_at TEXT NOT NULL);`);
  const units=uid=>all('SELECT unit FROM professional_units WHERE user_id=? ORDER BY unit',uid).map(r=>r.unit);
  const profile=uid=>{const p=get("SELECT p.*,m.email,m.role,m.active FROM professional_profiles p JOIN members m USING(user_id) WHERE p.user_id=? AND m.role IN ('psychologist','social_worker')",uid);return p?{...p,active:!!p.active,units:units(uid)}:undefined};
- const read=(actor,uid)=>{const m=requireRole(actor,['admin',...PROFESSIONAL_ROLES]);if(m.role!=='admin'&&actor!==uid)fail('Acesso não permitido.',403);const p=profile(uid);if(!p)fail('Profissional não localizado.',404);return p};
+ const read=(actor,uid)=>{const m=requireRole(actor,['admin','secretary',...PROFESSIONAL_ROLES]);if(!['admin','secretary'].includes(m.role)&&actor!==uid)fail('Acesso não permitido.',403);const p=profile(uid);if(!p)fail('Profissional não localizado.',404);return p};
  const approved=uid=>{const p=profile(uid);return !!(p?.active&&p.status==='verified'&&p.review_until>=localDay())};
  return {
   professionalProfile:profile,professionalApproved:approved,
   async professionals(actor){const m=requireRole(actor,['admin','secretary',...PROFESSIONAL_ROLES]);const rows=m.role==='admin'||m.role==='secretary'?all('SELECT user_id FROM professional_profiles').map(p=>profile(p.user_id)).filter(Boolean):[profile(actor)].filter(Boolean);return rows.map(p=>({user_id:p.user_id,name:p.name,role:p.role,active:p.active,status:p.status,available:approved(p.user_id),units:p.units}))},
   async professional(actor,uid){const p=read(actor,uid);audit(actor,'professional.read:'+uid);return {...p,available:approved(uid)}},
   async saveProfessional(actor,uid,p){return tx(()=>{
-   requireRole(actor,['admin']);if(!p||Object.keys(p).some(k=>![...keys,'email','role','units','status','version','checked'].includes(k)))fail('Campos inválidos.');
+   requireRole(actor,['admin','secretary']);if(!p||Object.keys(p).some(k=>![...keys,'email','role','units','status','version','checked'].includes(k)))fail('Campos inválidos.');
    if(!PROFESSIONAL_ROLES.includes(p.role)||!['pending','verified'].includes(p.status)||!Number.isSafeInteger(p.version)||p.version<0)fail('Cadastro inválido.');
    const row=Object.fromEntries(keys.map(k=>[k,text(p[k]??'',k,k==='rg'?40:160,k==='name'?3:k==='phone'?8:0)]));
    if(!/^\+?[\d ()-]{8,30}$/.test(row.phone))fail('Confira o telefone.');row.cpf=row.cpf.replace(/[. -]/g,'');if(row.cpf&&!validCpf(row.cpf))fail('CPF inválido. Confira os dígitos.');
