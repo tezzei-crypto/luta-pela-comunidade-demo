@@ -1,3 +1,4 @@
+import {diagnostics} from './diagnostics.mjs';
 import {contactSettings} from './contact-settings.mjs';
 import {attendanceInsights} from './attendance-insights.mjs';
 import {rollcallTools} from './rollcall-tools.mjs';
@@ -85,6 +86,7 @@ export function createSqliteStore(env,{transport=fetch}={}){
   }return rows.length;
  })}
  const api={
+  ...diagnostics({db,get,all,run,tx,requireRole,audit}),
   ...contactSettings({db,get,run,tx,requireRole,audit}),...insights,...rollcalls,...staffAccounts({db,get,all,run,tx,requireRole,audit}),...project,...teaching,...professionals,...scheduling,...workforceTools({db,get,all,run,tx,requireRole,audit}),...studentDetails({db,get,all,run,tx,requireRole,audit}),
   async sendBookingNotice(actor,id){const n=await scheduling.claimBookingNotice(actor,id);if(!n)return;let sent=false;try{if(!env.RESEND_API_KEY||!env.MAIL_FROM)throw Error('Email indisponível');const to=[...new Set([n.email,env.BOOTSTRAP_ADMIN_EMAIL].filter(emailValid))];const r=await transport('https://api.resend.com/emails',{method:'POST',headers:{Authorization:'Bearer '+env.RESEND_API_KEY,'Content-Type':'application/json','Idempotency-Key':'booking-'+id},body:JSON.stringify({from:env.MAIL_FROM,to,subject:'Nova solicitação na agenda — Luta pela Comunidade',text:'Há uma nova solicitação de atendimento no portal privado.\nProtocolo: '+id+'\nConsulte os detalhes na área Agenda após entrar com seu email. A secretaria deve confirmar com a família por WhatsApp.\n'+(env.PUBLIC_ORIGIN||env.RENDER_EXTERNAL_URL||'')+'/portal/#schedule-area'}),signal:AbortSignal.timeout(15000)});sent=r.ok&&!!(await r.json()).id}catch{}await scheduling.bookingNoticeResult(id,sent)},
   close:()=>db.close(),

@@ -1,17 +1,17 @@
 'use strict';
 const $=id=>document.getElementById(id),labels={admin:'Administrador',secretary:'Secretaria',psychologist:'Psicologia',social_worker:'Assistência social',guardian:'Aluno ou responsável',teacher:'Professor'};
 const kinds={photo:'Foto',student_document:'Documento do aluno',guardian_document:'Documento do responsável',consent:'Autorização',report_card:'Boletim escolar',medical_certificate:'Atestado médico'};
+const requestFeedbackReady=import('/request-feedback.js');
 const sessionCacheReady=import('/portal/session-cache.js').then(m=>m.createSessionCache());
 let sessionCache=null,sessionTimer;sessionCacheReady.then(cache=>sessionCache=cache);
 let token='',me=null,students=[],chosen='',previewToken='',loginEmail='';
 function el(tag,text,attrs={}){const n=document.createElement(tag);if(text!==undefined)n.textContent=text;for(const [k,v]of Object.entries(attrs))n.setAttribute(k,v);return n}
 function notice(text,error=false){$('notice').textContent=text;$('notice').classList.toggle('error',error)}
 async function api(path,{method='GET',data,form,blob=false}={}){
- const sessionToken=token;
- const res=await fetch('/api/portal'+path,{method,cache:'no-store',headers:{...(token?{Authorization:'Bearer '+token}:{}),...(data?{'Content-Type':'application/json'}:{})},body:form||(data?JSON.stringify(data):undefined)});
- if(sessionToken&&sessionToken!==token)throw Error('A sessão foi encerrada.');
- if(!res.ok){const p=await res.json().catch(()=>({}));if(res.status===401&&token)reset();throw Error(p.message||'Não foi possível concluir.')}
- return blob?res.blob():res.json();
+ const sessionToken=token,feedback=await requestFeedbackReady;
+ const options={method,cache:'no-store',headers:{...(token?{Authorization:'Bearer '+token}:{}),...(data?{'Content-Type':'application/json'}:{})},body:form||(data?JSON.stringify(data):undefined)};
+ try{const value=blob?await (await feedback.requestResponse('/api/portal'+path,options)).blob():await feedback.requestJson('/api/portal'+path,options);if(sessionToken&&sessionToken!==token)throw Error('A sessão foi encerrada.');return value}
+ catch(error){if(error.status===401&&token)reset();throw error}
 }
 function action(fn){return async event=>{event?.preventDefault();const form=event?.currentTarget?.matches?.('form')?event.currentTarget:null;form?.querySelector('[data-form-feedback]')?.remove();const button=event?.currentTarget?.matches?.('form')?(event.submitter||event.currentTarget.querySelector('button:not([type]),button[type=submit]')):event?.currentTarget;try{if(button?.tagName==='BUTTON')button.disabled=true;await fn(event)}catch(e){notice(e.message,true);if(form?.isConnected){const feedback=el('p',e.message,{class:'form-error',role:'alert',tabindex:'-1','data-form-feedback':''});form.append(feedback);feedback.focus({preventScroll:true});feedback.scrollIntoView({block:'nearest'})}}finally{if(button?.tagName==='BUTTON')button.disabled=button.dataset.locked==='true'}}}
 function reset(){clearTimeout(sessionTimer);sessionCache?.clear();token='';me=null;students=[];previewToken='';chosen='';$('workspace').hidden=true;$('detail').replaceChildren();$('students').replaceChildren();$('members').replaceChildren();$('preview').replaceChildren();$('link-user').replaceChildren();$('link-student').replaceChildren();$('logout').hidden=true;$('login').hidden=false;$('code').value='';$('test-access-banner')?.remove();document.dispatchEvent(new Event('portal:logout'));notice('Sessão encerrada. Entre novamente quando precisar.')}
