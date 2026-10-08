@@ -8,7 +8,7 @@ export function calendarTools({all,requireRole,professionalProfile,professionalA
   const member=requireRole(actor,[...managers,...care]);
   if(!validDay(p.from)||!validDay(p.to)||p.from>p.to||(+new Date(p.to)-new Date(p.from))/86400000>62)fail('Selecione um período de até 63 dias.');
   if(p.unit&&!units.includes(p.unit))fail('Núcleo inválido.');
-  if(p.status&&!['free','pending','confirmed','completed','absent','withdrawn','expired','unavailable'].includes(p.status))fail('Situação inválida.');
+  if(p.status&&!['free','pending','confirmed','completed','absent','withdrawn','expired','unavailable','waiting'].includes(p.status))fail('Situação inválida.');
   if(p.professional&&!/^[0-9a-f-]{36}$/i.test(p.professional))fail('Profissional inválido.');
   if(care.includes(member.role)&&p.professional&&p.professional!==actor)fail('Acesso não permitido.',403);
   const professional=care.includes(member.role)?actor:p.professional;
@@ -17,7 +17,7 @@ export function calendarTools({all,requireRole,professionalProfile,professionalA
   let where='s.start_at>=? AND s.start_at<?';
   if(professional){where+=' AND s.professional_id=?';params.push(professional)}
   if(p.unit){where+=' AND s.unit=?';params.push(p.unit)}
-  const rows=all(`SELECT s.id,s.professional_id,s.unit,s.start_at,s.end_at,s.state,s.version AS slot_version,
+  const rows=all(`SELECT s.id,s.professional_id,s.unit,s.start_at,s.end_at,s.state,s.version AS slot_version,s.modality,s.location,
    p.name AS professional_name,m.role AS service,b.id AS booking_id,b.status AS booking_status,b.student_id,
    st.name AS student_name,b.version AS booking_version
    FROM appointment_slots s JOIN professional_profiles p ON p.user_id=s.professional_id JOIN members m ON m.user_id=p.user_id
@@ -31,6 +31,10 @@ export function calendarTools({all,requireRole,professionalProfile,professionalA
    const status=row.booking_status||(row.state==='cancelled'?'withdrawn':row.start_at<=now?'expired':!professional.active||!professional.units.includes(row.unit)?'unavailable':'free');
    const {booking_status,state,...event}=row;return {...event,status};
   });
+  if(managers.includes(member.role)&&!p.professional){
+   const pending=all(`SELECT r.id AS request_id,r.id,r.unit,r.desired_at AS start_at,r.desired_at AS end_at,r.service,r.student_id,st.name AS student_name,'A definir pela secretaria' AS professional_name,'waiting' AS status FROM appointment_requests r JOIN students st ON st.id=r.student_id WHERE r.status='waiting' AND r.desired_at>=? AND r.desired_at<? ${p.unit?'AND r.unit=?':''} ORDER BY r.desired_at LIMIT 5001`,params[0],params[1],...(p.unit?[p.unit]:[]));
+   if(pending.length>5000)fail('Há muitas solicitações. Reduza o período.',413);events.push(...pending);events.sort((a,b)=>a.start_at.localeCompare(b.start_at));
+  }
   return {events:p.status?events.filter(e=>e.status===p.status):events,from:p.from,to:p.to,time_zone:'America/Sao_Paulo',generated_at:now};
  }};
 }

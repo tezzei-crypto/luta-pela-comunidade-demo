@@ -3,6 +3,14 @@ import {fail,fileType,csv} from './portal-domain.mjs';
 const headers={'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer'},json=(p,s=200)=>Response.json(p,{status:s,headers});
 export async function handleProfessionals({req,route,method,url,store,actor}){
  const body=async()=>{try{return await req.json()}catch{fail('Dados inválidos.')}};
+ if(route==='/appointment-requests'&&method==='GET')return json({requests:await store.appointmentRequests(actor,url.searchParams.get('status')||'waiting')});
+ if(route==='/appointment-requests'&&method==='POST')return json({request:await store.createAppointmentRequest(await body(),actor),message:'Solicitação recebida por outro canal registrada no painel. Nenhuma mensagem foi enviada.'},201);
+ const requestMatch=route.match(/^\/appointment-requests\/([0-9a-f-]{36})(\/slots)?$/i);
+ if(requestMatch&&method==='GET'&&requestMatch[2])return json({slots:await store.requestSlots(actor,requestMatch[1])});
+ if(requestMatch&&method==='PATCH'&&!requestMatch[2])return json({request:await store.reviewAppointmentRequest(actor,requestMatch[1],await body()),message:'Solicitação atualizada. A reserva aguarda confirmação com a família.'});
+ const move=route.match(/^\/bookings\/([0-9a-f-]{36})\/reschedule$/i);
+ if(move&&method==='PATCH')return json({booking:await store.rescheduleBooking(actor,move[1],await body()),message:'Atendimento remarcado. A vaga anterior foi liberada; confirme o novo horário com a família.'});
+ if(move&&method==='GET'){const member=await store.member(actor);if(!['admin','secretary'].includes(member.role))fail('Acesso não permitido.',403);const b=await store.booking(actor,move[1]);return json({slots:await store.publicAppointmentSlots({studentId:b.student_id})})}
  if(route==='/professionals'&&method==='GET')return json({professionals:await store.professionals(actor)});
  if(route==='/professionals'&&method==='POST')return json({professional:await store.saveProfessional(actor,null,await body()),message:'Cadastro salvo. Envie os documentos para conferência.'},201);
  const professional=route.match(/^\/professionals\/([0-9a-f-]{36})(\/documents)?$/i);
@@ -20,6 +28,7 @@ export async function handleProfessionals({req,route,method,url,store,actor}){
  if(route==='/slots'&&method==='GET')return json({slots:await store.slots(actor,url.searchParams.get('professional'))});
  if(route==='/slots'&&method==='POST')return json({slot:await store.createSlot(actor,await body()),message:'Horário disponível para solicitação dos alunos do núcleo.'},201);
  const slot=route.match(/^\/slots\/([0-9a-f-]{36})(\/book)?$/i);
+ if(slot&&method==='PATCH'&&!slot[2])return json({slot:await store.updateSlot(actor,slot[1],await body()),message:'Modalidade e local atualizados.'});
  if(slot&&method==='POST'){
   if(slot[2]){const booking=await store.bookSlot(actor,slot[1],await body());await store.sendBookingNotice(actor,booking.id);return json({booking,message:'Solicitação registrada e horário reservado enquanto aguarda a secretaria. O atendimento só estará confirmado após contato por WhatsApp.'},201)}
   await store.cancelSlot(actor,slot[1],(await body()).version);return json({message:'Horário retirado da disponibilidade.'});
@@ -29,9 +38,9 @@ export async function handleProfessionals({req,route,method,url,store,actor}){
  if(route==='/appointment-calendar'&&method==='GET')return json(await store.appointmentCalendar(actor,Object.fromEntries(url.searchParams)));
  if(route==='/appointment-calendar.csv'&&method==='GET'){
   const r=await store.appointmentCalendar(actor,Object.fromEntries(url.searchParams));await store.audit(actor,'calendar.export');
-  const statusNames={free:'Livre',pending:'Aguardando secretaria',confirmed:'Confirmado',completed:'Realizado',absent:'Não compareceu',withdrawn:'Horário retirado',expired:'Horário encerrado',unavailable:'Profissional indisponível'};
+  const statusNames={free:'Livre',pending:'Aguardando secretaria',confirmed:'Confirmado',completed:'Realizado',absent:'Não compareceu',withdrawn:'Horário retirado',expired:'Horário encerrado',unavailable:'Profissional indisponível',waiting:'Preferência sem vaga'};
   const rows=r.events.map(e=>({...e,status:statusNames[e.status],date:new Intl.DateTimeFormat('pt-BR',{timeZone:r.time_zone}).format(new Date(e.start_at)),start:new Intl.DateTimeFormat('pt-BR',{timeZone:r.time_zone,hour:'2-digit',minute:'2-digit'}).format(new Date(e.start_at)),end:new Intl.DateTimeFormat('pt-BR',{timeZone:r.time_zone,hour:'2-digit',minute:'2-digit'}).format(new Date(e.end_at))}));
-  return new Response(csv(rows,['date','start','end','unit','professional_name','service','status','student_id','student_name','booking_id']),{headers:{...headers,'Content-Type':'text/csv; charset=utf-8','Content-Disposition':'attachment; filename="calendario-atendimentos.csv"'}});
+  return new Response(csv(rows,['date','start','end','unit','professional_name','service','status','student_id','student_name','booking_id','request_id','modality']),{headers:{...headers,'Content-Type':'text/csv; charset=utf-8','Content-Disposition':'attachment; filename="calendario-atendimentos.csv"'}});
  }
  const booking=route.match(/^\/bookings\/([0-9a-f-]{36})$/i);
  if(booking&&method==='GET')return json({booking:await store.booking(actor,booking[1])});
