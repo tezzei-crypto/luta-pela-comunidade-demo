@@ -1,3 +1,4 @@
+import {observeRequest,handleClientDiagnostic} from './diagnostic-http.mjs';
 import {requestOrigin} from './request-origin.mjs';
 import {withSocialPreview} from './social-preview.mjs';
 import {handleContact} from './contact-handler.mjs';
@@ -14,9 +15,11 @@ await initializePortal(process.env);
 let attendanceJobRunning=false;
 async function attendanceJob(){if(attendanceJobRunning||!portalConfigured(process.env))return;attendanceJobRunning=true;try{const store=createStore(process.env);await store.deliverAttendanceNotices();await store.deliverRollcallNotices()}catch{console.error('Não foi possível concluir a verificação automática de frequência; nova tentativa em cinco minutos.')}finally{attendanceJobRunning=false}}
 setInterval(attendanceJob,300000).unref();setTimeout(attendanceJob,1000).unref();
-http.createServer(async(req,res)=>{
+async function serveRequest(req,res){
  let url;try{url=new URL(req.url,requestOrigin(req.headers.host,process.env))}catch{res.writeHead(400).end();return}
- const send=async response=>{res.writeHead(response.status,Object.fromEntries(response.headers));res.end(Buffer.from(await response.arrayBuffer()))};
+ const send=async response=>{let payload=Buffer.from(await response.arrayBuffer());const headers=Object.fromEntries(response.headers);if(response.status>=400&&headers['content-type']?.includes('application/json')){try{payload=Buffer.from(JSON.stringify({...JSON.parse(payload),support_id:req.headers['x-support-id']}));delete headers['content-length']}catch{}}res.writeHead(response.status,headers);res.end(payload)};
+ if(url.pathname==='/api/diagnostics'){await handleClientDiagnostic(req,res,url,process.env);return;}
+
  if(url.pathname==='/api/contact'||url.pathname==='/api/contact/whatsapp'){await send(await handleContact(new Request(url,{method:req.method}),process.env));return;}
  if(url.pathname==='/api/health'&&req.method==='GET'){
   try{if(portalConfigured(process.env))await createStore(process.env).members();await send(Response.json({ok:true},{headers:{'Cache-Control':'no-store'}}))}catch{await send(Response.json({ok:false},{status:503,headers:{'Cache-Control':'no-store'}}))}return;
@@ -57,9 +60,10 @@ http.createServer(async(req,res)=>{
  if(fs.existsSync(file)&&fs.statSync(file).isDirectory())file=path.join(file,'index.html');if(!fs.existsSync(file)){res.writeHead(404).end();return}
  res.setHeader('Content-Type',({'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8','.png':'image/png','.jpeg':'image/jpeg','.jpg':'image/jpeg','.svg':'image/svg+xml'})[path.extname(file)]||'application/octet-stream');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','same-origin');if(req.method==='HEAD')res.end();else if(path.extname(file)==='.html'){
   // One shared entry point also covers staff portals that do not load app.js.
-  const html=withSocialPreview(await fs.promises.readFile(file,'utf8'),url.pathname);res.end(html.replace(/<\/body>/i,'<script src="/contact-widget.js" defer></script></body>'));
+  const html=withSocialPreview(await fs.promises.readFile(file,'utf8'),url.pathname);res.end(html.replace(/<\/body>/i,'<script src="/contact-widget.js" defer></script>'+(/^\/(administracao|portal|professor|psicologia|assistencia-social)\//.test(url.pathname)?'<script src="/portal/diagnostics.js" defer></script>':'')+'</body>'));
  }else fs.createReadStream(file).pipe(res);
-}).listen(port,process.env.HOST||'0.0.0.0',function(){console.log(`Local: http://127.0.0.1:${this.address().port}`)});
+}
+http.createServer((req,res)=>{const diagnostic=observeRequest(req,res,process.env);serveRequest(req,res).catch(error=>diagnostic.fail(error))}).listen(port,process.env.HOST||'0.0.0.0',function(){console.log(`Local: http://127.0.0.1:${this.address().port}`)});
 
 
 

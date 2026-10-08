@@ -1,3 +1,5 @@
+import {recordDiagnostic} from './diagnostic-http.mjs';
+import {causeFor} from './diagnostics.mjs';
 import {createStore} from './portal-store.mjs';
 import {persistRegistration} from './registration-persistence.mjs';
 export const RECIPIENTS=['participante@lutapelacomunidade.com.br','tezzei@gmail.com'];
@@ -32,7 +34,10 @@ export async function handleRegistration(request,env={},send=fetch,injectedStore
  const id=get('requestId');if(!/^[0-9a-f-]{36}$/i.test(id))return reply(400,'Atualize a página antes de enviar.');
  const attachments=[];let total=0;
  for(const [key,label] of Object.entries(FILES)){
-  const file=data.get(key);if(!file||typeof file.arrayBuffer!=='function'||file.size===0)return reply(400,`Anexe: ${label}.`);
+  const file=data.get(key);
+  // Documents can be completed by the secretary after initial registration.
+  if(!file||(typeof file.arrayBuffer==='function'&&file.size===0&&!file.name))continue;
+  if(typeof file.arrayBuffer!=='function'||file.size===0)return reply(400,`${label}: escolha um arquivo válido ou remova o anexo para enviar depois.`);
   if(file.size>3*1024*1024)return reply(413,`${label}: o limite é 3 MB por arquivo.`);
   total+=file.size;if(total>12*1024*1024)return reply(413,'O total de arquivos deve ter até 12 MB.');
   const bytes=new Uint8Array(await file.arrayBuffer()),kind=fileKind(bytes);
@@ -43,9 +48,9 @@ export async function handleRegistration(request,env={},send=fetch,injectedStore
   try{
    await persistRegistration(injectedStore||createStore(env),{id,student_name:student,birth_date:birth,unit:get('unit'),guardian_name:guardian,guardian_email:email,guardian_phone:phone,relationship},attachments);
    // O registro privado é a confirmação principal; email é somente um aviso, sem anexos.
-   if(env.RESEND_API_KEY&&env.MAIL_FROM)await send('https://api.resend.com/emails',{method:'POST',headers:{Authorization:`Bearer ${env.RESEND_API_KEY}`,'Content-Type':'application/json','Idempotency-Key':`registration-private-${id}`},body:JSON.stringify({from:env.MAIL_FROM,to:RECIPIENTS,subject:'Nova inscrição para análise — Luta pela Comunidade',text:`Uma nova inscrição foi recebida no painel administrativo. Protocolo: ${id}. Entre na área de administração do site para conferir os documentos e decidir sobre a aprovação.`}),signal:AbortSignal.timeout(15000)}).catch(()=>{});
-   return reply(200,'Inscrição recebida no painel da coordenação. Aguarde a análise dos documentos e o contato da equipe. O recebimento não garante vaga.',{protocol:id});
-  }catch(error){return reply(error.status===409?409:503,error.status===409?error.message:'Não foi possível confirmar o registro. Seus campos foram preservados; tente novamente.')}
+   if(env.RESEND_API_KEY&&env.MAIL_FROM)await send('https://api.resend.com/emails',{method:'POST',headers:{Authorization:`Bearer ${env.RESEND_API_KEY}`,'Content-Type':'application/json','Idempotency-Key':`registration-private-${id}`},body:JSON.stringify({from:env.MAIL_FROM,to:RECIPIENTS,subject:'Nova inscrição para análise — Luta pela Comunidade',text:`Uma nova inscrição foi recebida no painel administrativo. Protocolo: ${id}. Entre na área de administração do site para conferir os documentos e decidir sobre a aprovação.`}),signal:AbortSignal.timeout(15000)}).then(response=>{if(!response.ok)throw Error('Email not accepted');}).catch(()=>{recordDiagnostic(env,{support_id:request.headers.get('x-support-id'),operation:'registration',kind:'email',status:502},injectedStore)});
+   return reply(200,'Solicitação registrada! A secretaria poderá receber pelo WhatsApp os documentos que faltarem e completar seu cadastro. Aguarde o contato da equipe e a confirmação da vaga.',{protocol:id});
+  }catch(error){recordDiagnostic(env,{support_id:request.headers.get('x-support-id'),operation:'registration',kind:error.status===409?'conflict':causeFor(error),status:error.status===409?409:503},injectedStore);return reply(error.status===409?409:503,error.status===409?error.message:'Não foi possível confirmar o registro. Seus campos foram preservados; tente novamente.')}
  }
  const subject=`Aluno: ${student} — ${unit} — ${age} anos`;
  const timestamp=new Date().toISOString();

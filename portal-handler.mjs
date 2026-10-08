@@ -1,5 +1,6 @@
 import {sameOrigin} from './request-origin.mjs';
 import {handleAttendanceInsights} from './attendance-insights-handler.mjs';
+import {recordDiagnostic} from './diagnostic-http.mjs';
 import {requireRouteAccess} from './portal-permissions.mjs';
 import {handleWorkforce} from './workforce-handler.mjs';
 import {handleProfessionals} from './professional-handler.mjs';
@@ -30,7 +31,7 @@ export async function handlePortal(req,env=process.env,injectedStore){
   if(route==='/auth/request'&&method==='POST'){
    const {email}=await body();if(typeof email!=='string'||email.length>254||!/^\S+@\S+\.\S+$/.test(email))fail('Informe um email válido.');
    // Mesma resposta para contas ausentes, evitando enumeração de responsáveis.
-   await store.requestCode(email.trim().toLowerCase()).catch(()=>{});
+   await store.requestCode(email.trim().toLowerCase()).catch(error=>{recordDiagnostic(env,{support_id:req.headers.get('x-support-id'),source:'server',operation:'login',kind:error.status===429?'rate_limit':'email',status:error.status||502},store)});
    return json({message:'Se este email estiver habilitado, você receberá um código. Confira também o spam.'});
   }
   let user,member,session;
@@ -47,6 +48,9 @@ export async function handlePortal(req,env=process.env,injectedStore){
   const role=member.role,actor=user.id,staff=['admin','secretary'].includes(role);
   const requireRole=(...roles)=>{if(!roles.includes(role))fail('Acesso não permitido.',403)};
   requireRouteAccess(role,route,method);
+  if(route==='/diagnostics'&&method==='GET'){requireRole('admin');return json(store.diagnosticEvents(actor,{support_id:url.searchParams.get('support_id')||'',kind:url.searchParams.get('kind')||'',page:Number(url.searchParams.get('page')||0)}));}
+  if(route==='/diagnostics/settings'&&method==='PATCH'){requireRole('admin');return json({settings:store.configureDiagnostics(actor,await body())});}
+
   if(route==='/contact-settings'){requireRole('admin','secretary');if(method==='GET')return json({settings:await store.contactSettings(actor)});if(method==='PATCH')return json({settings:await store.saveContactSettings(actor,await body()),message:'Contato da secretaria atualizado no site.'});}
   const attendanceInsights=await handleAttendanceInsights({req,route,method,url,store,actor});if(attendanceInsights)return attendanceInsights;
   const workforce=await handleWorkforce({req,route,method,url,store,actor});if(workforce)return workforce;
