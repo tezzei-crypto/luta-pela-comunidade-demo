@@ -3,7 +3,7 @@ const panelItems=[
  ['dashboard-area','Visão geral',['admin','secretary']],['students-area','Alunos',['admin','secretary','guardian']],
  ['registrations-area','Candidatos',['admin','secretary']],['teacher-area','Professores',['admin','secretary']],['monitors-area','Monitores',['admin','secretary']],['workforce-area','Frequência da equipe',['admin','secretary']],
  ['professionals-area','Psicologia e assistência social',['admin','secretary']],['schedule-area','Agenda',['admin','secretary','guardian','psychologist','social_worker']],
- ['groups-area','Turmas e matrículas',['admin','secretary']],['attendance-area','Presença',['admin','secretary','teacher']],['attendance-report-area','Relatório de presença',['admin','secretary','psychologist','social_worker']],['reports-area','Ocorrências e lesões',['admin','secretary','teacher','psychologist','social_worker']],
+ ['groups-area','Turmas e matrículas',['admin','secretary']],['attendance-area','Presença',['admin','secretary','teacher']],['rollcall-area','Chamadas pendentes',['admin','secretary','teacher']],['attendance-report-area','Relatório de presença',['admin','secretary','psychologist','social_worker']],['reports-area','Ocorrências e lesões',['admin','secretary','teacher','psychologist','social_worker']],
  ['team-area','Equipe e acessos',['admin','secretary']],['import-area','Planilhas',['admin','secretary']],['contact-settings-area','Contato da secretaria',['admin','secretary']],['audit-area','Histórico',['admin','secretary']],['diagnostics-area','Diagnóstico de erros',['admin']]
 ];
 let currentPanel='';
@@ -24,7 +24,7 @@ function setupNavigation(){
  $('admin-nav').classList.add('legacy-nav');$('teaching-nav')?.classList.add('legacy-nav');
  for(const [id]of panelItems)$(id)?.classList.add('workspace-panel');
  $('workspace-menu').replaceChildren();for(const [id,label,roles]of panelItems)if(roles.includes(me.role)){const a=el('a',label,{href:'#'+id});a.addEventListener('click',e=>{e.preventDefault();showPanel(id)});$('workspace-menu').append(a)}
- if(!$('quick-actions')&&['admin','secretary'].includes(me.role)){const quick=el('div',undefined,{id:'quick-actions',class:'quick-actions'});$('dashboard-area').prepend(quick);for(const [id,label,roles]of panelItems.filter(p=>['teacher-area','professionals-area','registrations-area','groups-area','attendance-area','attendance-report-area','workforce-area'].includes(p[0])&&p[2].includes(me.role))){const b=el('button',label,{class:'secondary',type:'button'});b.addEventListener('click',()=>showPanel(id));quick.append(b)}}
+ if(!$('quick-actions')&&['admin','secretary'].includes(me.role)){const quick=el('div',undefined,{id:'quick-actions',class:'quick-actions'});$('dashboard-area').prepend(quick);for(const [id,label,roles]of panelItems.filter(p=>['teacher-area','professionals-area','registrations-area','groups-area','attendance-area','rollcall-area','attendance-report-area','workforce-area'].includes(p[0])&&p[2].includes(me.role))){const b=el('button',label,{class:'secondary',type:'button'});b.addEventListener('click',()=>showPanel(id));quick.append(b)}}
  let target=currentPanel||location.hash.slice(1);if(!panelItems.some(p=>p[0]===target&&p[2].includes(me.role)))target=me.role==='teacher'?'attendance-area':['psychologist','social_worker'].includes(me.role)?'schedule-area':['admin','secretary'].includes(me.role)?'dashboard-area':'students-area';showPanel(target,{focus:false});
 }
 document.addEventListener('portal:loaded',setupNavigation);
