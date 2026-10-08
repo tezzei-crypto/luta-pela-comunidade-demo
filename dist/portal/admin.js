@@ -10,7 +10,7 @@ async function dashboard(){
   card('Alunos aprovados',d.approved,'Situação atual'),card('Inscrições pendentes',d.registrations.pending,'Aguardando análise'),card('Complementações',d.registrations.needs_info,'Aguardando informações'),card('Fichas a completar',d.incomplete,'Medidas ou uniformes ausentes'));
  $('dashboard-state').textContent='Atualizado em '+new Date(d.generated_at).toLocaleString('pt-BR')+'. '+(!d.intake_enabled?'A recepção de inscrições neste painel ainda não foi ativada. ':'')+(!d.registry_active?'A lista de aprovação do agendamento ainda usa a configuração anterior.':'Aprovações integradas ao agendamento.');
  const traffic=$('traffic-summary');traffic.replaceChildren();
- if(me.role==='admin'){
+ if(['admin','secretary'].includes(me.role)){
   traffic.append(el('h3','Visitas ao site'));
   if(!d.metrics_enabled)traffic.append(el('p','Estatísticas ainda não ativadas. Não há estimativa de visitas para exibir.'));
   else{
@@ -38,7 +38,7 @@ async function review(id){
  for(const d of r.documents){const b=el('button','Baixar '+(kinds[d.kind]||'documento'),{class:'secondary'});b.addEventListener('click',action(async()=>download(await api('/registrations/'+id+'/documents/'+d.id,{blob:true}),'inscricao-'+d.id+(d.mime==='application/pdf'?'.pdf':d.mime==='image/png'?'.png':'.jpg'))));box.append(b)}
  if(r.status!=='approved'){
   registrationUploader(box,id,r);
-  const form=el('form');field(form,'Decisão','decision','needs_info',{options:me.role==='admin'?{needs_info:'Solicitar complementação',approved:'Aprovar candidato e gerar ID de aluno',rejected:'Não aprovar'}:{needs_info:'Solicitar complementação',rejected:'Não aprovar'}});
+  const form=el('form');field(form,'Decisão','decision','needs_info',{options:['admin','secretary'].includes(me.role)?{needs_info:'Solicitar complementação',approved:'Aprovar candidato e gerar ID de aluno',rejected:'Não aprovar'}:{needs_info:'Solicitar complementação',rejected:'Não aprovar'}});
   const reason=field(form,'Motivo administrativo (obrigatório para complementação ou não aprovação)','reason','');reason.maxLength=500;
   const existing=field(form,'ID já existente — preencha somente se for o mesmo aluno','existing_student_id','');existing.maxLength=11;existing.placeholder='UND1_000002';
   form.append(el('p','Antes de criar um novo ID, confira se o aluno já está cadastrado. Vincular um ID existente exige conferir que se trata da mesma pessoa.',{class:'muted'}));
@@ -49,8 +49,8 @@ async function review(id){
 }
 async function audit(){const {events}=await api('/audit');$('audit-list').replaceChildren(tableOf(['Data e hora','Autor','Ação','Aluno'],events.map(e=>[new Date(e.created_at).toLocaleString('pt-BR'),e.actor_email||e.actor,e.action,e.student_id])))}
 document.addEventListener('portal:loaded',action(async()=>{
- const staff=['admin','secretary'].includes(me.role);for(const id of ['admin-nav','dashboard-area','registrations-area'])$(id).hidden=!staff;$('audit-area').hidden=me.role!=='admin';
- if(staff){await dashboard();await registrations()}if(me.role==='admin')await audit();
+ const staff=['admin','secretary'].includes(me.role);for(const id of ['admin-nav','dashboard-area','registrations-area'])$(id).hidden=!staff;$('audit-area').hidden=!['admin','secretary'].includes(me.role);
+ if(staff){await dashboard();await registrations()}if(['admin','secretary'].includes(me.role))await audit();
 }));
 document.addEventListener('portal:logout',()=>{for(const id of ['dashboard-cards','traffic-summary','dashboard-tables','registration-list','registration-detail','audit-list'])$(id).replaceChildren();registrationPage=0});
 $('dashboard-days').addEventListener('change',action(dashboard));$('refresh-dashboard').addEventListener('click',action(dashboard));$('refresh-audit').addEventListener('click',action(audit));

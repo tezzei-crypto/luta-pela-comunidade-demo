@@ -1,3 +1,5 @@
+import {staffAccounts} from './staff-accounts.mjs';
+import {workforceTools} from './workforce-tools.mjs';
 import {professionalTools} from './professional-tools.mjs';
 import {schedulingTools} from './scheduling-tools.mjs';
 import {studentDetails} from './student-details.mjs';
@@ -60,7 +62,7 @@ export function createSqliteStore(env,{transport=fetch}={}){
   const seen=new Set();
   for(const raw of rows){const r=validateStudent(raw);if(seen.has(r.id))fail('ID repetido no lote.');seen.add(r.id);
    const old=get('SELECT * FROM students WHERE id=?',r.id);
-   if(m.role==='secretary'&&(!old||r.status!==old.status))fail('Somente a administração altera a aprovação.',403);
+   
    if(m.role==='guardian'&&(!old||!get('SELECT 1 FROM links WHERE user_id=? AND student_id=?',actor,r.id)||['name','birth_date','status'].some(k=>r[k]!==old[k])))fail('Acesso não permitido.',403);
    if((old?.version||0)!==r.version)fail('Ficha alterada. Recarregue ou exporte um CSV atualizado.',409);
    const row={height_cm:null,weight_kg:null,kimono:'',rashguard:'',shorts:'',...r,version:r.version+1,updated_at:nowIso()};
@@ -70,7 +72,7 @@ export function createSqliteStore(env,{transport=fetch}={}){
   }return rows.length;
  })}
  const api={
-  ...project,...teaching,...professionals,...scheduling,...studentDetails({db,get,all,run,tx,requireRole,audit}),
+  ...staffAccounts({db,get,all,run,tx,requireRole,audit}),...project,...teaching,...professionals,...scheduling,...workforceTools({db,get,all,run,tx,requireRole,audit}),...studentDetails({db,get,all,run,tx,requireRole,audit}),
   async sendBookingNotice(actor,id){const n=await scheduling.claimBookingNotice(actor,id);if(!n)return;let sent=false;try{if(!env.RESEND_API_KEY||!env.MAIL_FROM)throw Error('Email indisponível');const to=[...new Set([n.email,env.BOOTSTRAP_ADMIN_EMAIL].filter(emailValid))];const r=await transport('https://api.resend.com/emails',{method:'POST',headers:{Authorization:'Bearer '+env.RESEND_API_KEY,'Content-Type':'application/json','Idempotency-Key':'booking-'+id},body:JSON.stringify({from:env.MAIL_FROM,to,subject:'Nova solicitação na agenda — Luta pela Comunidade',text:'Há uma nova solicitação de atendimento no portal privado.\nProtocolo: '+id+'\nConsulte os detalhes na área Agenda após entrar com seu email. A secretaria deve confirmar com a família por WhatsApp.\n'+(env.PUBLIC_ORIGIN||env.RENDER_EXTERNAL_URL||'')+'/portal/#schedule-area'}),signal:AbortSignal.timeout(15000)});sent=r.ok&&!!(await r.json()).id}catch{}await scheduling.bookingNoticeResult(id,sent)},
   close:()=>db.close(),
   async requestCode(email){
@@ -113,12 +115,12 @@ export function createSqliteStore(env,{transport=fetch}={}){
   },
   link:async(actor,uid,id)=>tx(()=>{
    const m=requireRole(actor,['admin','secretary']),target=member(uid);
-   if(!target||!['guardian','psychologist','social_worker'].includes(target.role)||m.role==='secretary'&&target.role!=='guardian')fail('Vínculo não permitido.',403);
+   if(!target||!['guardian','psychologist','social_worker'].includes(target.role))fail('Vínculo não permitido.',403);
    run('INSERT OR IGNORE INTO links(user_id,student_id) VALUES(?,?)',uid,id);audit(actor,'link.add:'+uid,id);
   }),
   setMember:async(actor,uid,role,active)=>tx(()=>{
-   requireRole(actor,['admin']);const target=get('SELECT * FROM members WHERE user_id=?',uid);
-   if(actor===uid||!target||target.role==='admin'||!['guardian','secretary','psychologist','social_worker','teacher'].includes(role)||role==='teacher'&&target.role!=='teacher'||typeof active!=='boolean')fail('Conta inválida.',403);
+   requireRole(actor,['admin','secretary']);const target=get('SELECT * FROM members WHERE user_id=?',uid);
+   if(actor===uid||!target||['admin','secretary'].includes(target.role)||!['guardian','psychologist','social_worker','teacher'].includes(role)||role==='teacher'&&target.role!=='teacher'||typeof active!=='boolean')fail('Conta inválida.',403);
    run('UPDATE members SET role=?,active=? WHERE user_id=?',role,Number(active),uid);run('DELETE FROM links WHERE user_id=?',uid);run('DELETE FROM teacher_units WHERE user_id=?',uid);run("UPDATE teacher_profiles SET status='pending',version=version+1 WHERE user_id=?",uid);run("UPDATE professional_profiles SET status='pending',version=version+1 WHERE user_id=?",uid);run('DELETE FROM sessions WHERE user_id=?',uid);run('DELETE FROM challenges WHERE email=?',target.email);audit(actor,'member.update:'+uid);
   }),
   registrations:async(status,offset=0)=>all('SELECT id,student_name,birth_date,unit,status,student_id,version,created_at FROM registrations WHERE status=? ORDER BY created_at,id LIMIT 51 OFFSET ?',status,offset),
@@ -129,7 +131,7 @@ export function createSqliteStore(env,{transport=fetch}={}){
    const r={...row,documents:JSON.stringify(row.documents),created_at:nowIso()};run('INSERT INTO registrations('+columns.join(',')+') VALUES('+columns.map(()=>'?').join(',')+')',...columns.map(k=>r[k]));return row;
   }),
   reviewRegistration:async(actor,id,p)=>tx(()=>{
-   const reviewer=requireRole(actor,['admin','secretary']);if(p.decision==='approved'&&reviewer.role!=='admin')fail('Somente o administrador pode aprovar candidatos.',403);const r=asRegistration(get('SELECT * FROM registrations WHERE id=?',id));
+   const reviewer=requireRole(actor,['admin','secretary']);const r=asRegistration(get('SELECT * FROM registrations WHERE id=?',id));
    if(!r)fail('Inscrição não localizada.',404);if(r.version!==p.version||r.status==='approved')fail('Inscrição alterada. Recarregue antes de decidir.',409);
    if(!['approved','needs_info','rejected'].includes(p.decision)||typeof p.reason!=='string'||p.reason.length>500||p.decision!=='approved'&&p.reason.trim().length<5)fail('Decisão inválida.');
    let sid=null;
@@ -155,7 +157,7 @@ export function createSqliteStore(env,{transport=fetch}={}){
    const result={...get("SELECT count(*) AS students,count(*) FILTER(WHERE status='approved') AS approved,count(*) FILTER(WHERE status='inactive') AS inactive,count(*) FILTER(WHERE height_cm IS NULL OR weight_kg IS NULL OR kimono='' OR rashguard='' OR shorts='') AS incomplete FROM students"),
     registrations:get("SELECT count(*) FILTER(WHERE status='pending') AS pending,count(*) FILTER(WHERE status='needs_info') AS needs_info,count(*) FILTER(WHERE status='approved') AS approved,count(*) FILTER(WHERE status='rejected') AS rejected,count(*) FILTER(WHERE created_at>=?) AS period_received FROM registrations",since),
     units:all("SELECT substr(id,1,4) AS unit,count(*) AS students,count(*) FILTER(WHERE status='approved') AS approved FROM students GROUP BY 1 ORDER BY 1"),documents:get('SELECT count(*) AS n FROM documents').n,generated_at:nowIso(),days,since};
-   if(m.role==='admin')Object.assign(result,{traffic:{...get('SELECT count(*) AS pageviews,count(DISTINCT session_hash) AS sessions,count(DISTINCT visitor_hash) AS visitors FROM metric_events WHERE created_at>=?',since),first_event:get('SELECT min(created_at) AS d FROM metric_events').d},
+   if(['admin','secretary'].includes(m.role))Object.assign(result,{traffic:{...get('SELECT count(*) AS pageviews,count(DISTINCT session_hash) AS sessions,count(DISTINCT visitor_hash) AS visitors FROM metric_events WHERE created_at>=?',since),first_event:get('SELECT min(created_at) AS d FROM metric_events').d},
     daily:all('SELECT br_day(created_at) AS day,count(*) AS pageviews,count(DISTINCT session_hash) AS sessions,count(DISTINCT visitor_hash) AS visitors FROM metric_events WHERE created_at>=? GROUP BY 1 ORDER BY 1',since),pages:all('SELECT page,count(*) AS views FROM metric_events WHERE created_at>=? GROUP BY page ORDER BY views DESC,page',since)});
    return result;
   },

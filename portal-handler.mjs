@@ -1,3 +1,5 @@
+import {requireRouteAccess} from './portal-permissions.mjs';
+import {handleWorkforce} from './workforce-handler.mjs';
 import {handleProfessionals} from './professional-handler.mjs';
 import {handleStudentDetails} from './student-details-handler.mjs';
 import {handleTeaching} from './teacher-handler.mjs';
@@ -43,6 +45,8 @@ export async function handlePortal(req,env=process.env,injectedStore){
   if(route==='/auth/logout'&&method==='POST'){await store.logout(req.headers.get('authorization').slice(7));return json({message:'Sessão encerrada.'})}
   const role=member.role,actor=user.id,staff=['admin','secretary'].includes(role);
   const requireRole=(...roles)=>{if(!roles.includes(role))fail('Acesso não permitido.',403)};
+  requireRouteAccess(role,route,method);
+  const workforce=await handleWorkforce({req,route,method,url,store,actor});if(workforce)return workforce;
   const linked=(await store.links(actor)).map(l=>l.student_id);
   const student=async id=>{
    if(!/^UND[1-3]_\d{6}$/.test(id)||!canRead(role,linked.includes(id)))fail('Aluno indisponível para esta conta.',403);
@@ -57,10 +61,10 @@ export async function handlePortal(req,env=process.env,injectedStore){
   if(route==='/dashboard'&&method==='GET'){
    requireRole('admin','secretary');const days=Number(url.searchParams.get('days')||30);if(![7,30,90].includes(days))fail('Período inválido.');
    const result=await store.dashboard(actor,days);
-   if(role!=='admin')for(const key of ['traffic','daily','pages'])delete result[key];
-   return json({...result,metrics_enabled:role==='admin'&&!!metricsEnabled(env),intake_enabled:env.PORTAL_INTAKE_ACTIVE==='true',registry_active:env.PORTAL_REGISTRY_ACTIVE==='true'});
+   // Administrators and the secretary share the management dashboard.
+   return json({...result,metrics_enabled:staff&&!!metricsEnabled(env),intake_enabled:env.PORTAL_INTAKE_ACTIVE==='true',registry_active:env.PORTAL_REGISTRY_ACTIVE==='true'});
   }
-  if(route==='/audit'&&method==='GET'){requireRole('admin');return json({events:await store.auditLog()})}
+  if(route==='/audit'&&method==='GET'){requireRole('admin','secretary');return json({events:await store.auditLog()})}
   if(route==='/registrations'&&method==='GET'){
    requireRole('admin','secretary');const status=url.searchParams.get('status')||'pending',page=Number(url.searchParams.get('page')||0);
    if(!['pending','needs_info','approved','rejected'].includes(status)||!Number.isInteger(page)||page<0||page>10000)fail('Filtro inválido.');
@@ -75,7 +79,7 @@ export async function handlePortal(req,env=process.env,injectedStore){
     return json({registration:{...data,age:ageAt(data.birth_date),documents:documents.map(({object_path,...d})=>d)}});
    }
    if(registrationMatch[2]==='review'&&method==='POST'){
-    const p=await body();if(p.decision==='approved'&&role!=='admin')fail('Somente o administrador pode aprovar candidatos.',403);
+    const p=await body();
     if(!Number.isSafeInteger(p.version)||p.version<1||!['approved','needs_info','rejected'].includes(p.decision)||typeof p.reason!=='string'||p.reason.length>500||/[\x00-\x1f]/.test(p.reason))fail('Confira a decisão e o motivo.');
     if(p.decision==='approved'&&p.checked!==true)fail('Confirme a conferência dos documentos e da identidade do responsável.');
     if(p.decision!=='approved'&&p.reason.trim().length<5)fail('Informe o motivo administrativo da decisão.');
@@ -164,22 +168,26 @@ export async function handlePortal(req,env=process.env,injectedStore){
    await store.audit(actor,'documents.export');return new Response(csv(rows,['student_id','document_id','kind','name','created_at']),{headers:{...privateHeaders,'Content-Type':'text/csv; charset=utf-8','Content-Disposition':'attachment; filename="indice-documentos.csv"'}});
   }
   if(route==='/import/preview'&&method==='POST'){
-   requireRole('admin');const rows=parseCsv((await body()).csv),existing=new Map((await store.students()).map(r=>[r.id,r]));
+   requireRole('admin','secretary');const rows=parseCsv((await body()).csv),existing=new Map((await store.students()).map(r=>[r.id,r]));
    for(const r of rows)if((existing.get(r.id)?.version||0)!==r.version)fail(`Versão desatualizada: ${r.id}. Exporte um CSV novo.`,409);
    const token=signPreview({actor,rows,expires:Date.now()+600000},env.PORTAL_SECRET);
    return json({token,rows:rows.map(r=>({id:r.id,name:r.name,action:existing.has(r.id)?'Atualizar':'Criar'}))});
   }
   if(route==='/import/commit'&&method==='POST'){
-   requireRole('admin');const rows=readPreview((await body()).token,env.PORTAL_SECRET,actor);
+   requireRole('admin','secretary');const rows=readPreview((await body()).token,env.PORTAL_SECRET,actor);
    if(!Array.isArray(rows)||!rows.length||rows.length>500)fail('Prévia inválida.');
    await store.import(actor,rows.map(r=>validateStudent(r)));return json({message:`${rows.length} fichas importadas. Nenhum aluno ausente do CSV foi apagado.`});
   }
+  if(route==='/staff-accounts'&&method==='GET'){requireRole('admin','secretary');return json({accounts:await store.staffAccounts(actor)})}
+  if(route==='/staff-accounts'&&method==='POST'){requireRole('admin','secretary');return json({account:await store.saveStaffAccount(actor,null,await body()),message:'Conta cadastrada. O titular pode solicitar seu código pelo email informado.'},201)}
+  const staffMatch=route.match(/^\/staff-accounts\/([0-9a-f-]{36})$/i);
+  if(staffMatch&&method==='PATCH'){requireRole('admin','secretary');return json({account:await store.saveStaffAccount(actor,staffMatch[1],await body()),message:'Cadastro e acesso atualizados.'})}
   if(route==='/members'&&method==='GET'){
-   requireRole('admin','secretary');return json({members:(await store.members()).filter(m=>role==='admin'||m.role==='guardian')});
+   requireRole('admin','secretary');return json({members:await store.members()});
   }
   if(route==='/members'&&method==='POST'){
    requireRole('admin','secretary');const {email,role:newRole}=await body();
-   if(!['secretary','psychologist','social_worker','guardian'].includes(newRole)||(role==='secretary'&&newRole!=='guardian'))fail('Função não permitida.',403);
+   if(newRole!=='guardian')fail('Função não permitida.',403);
    if(typeof email!=='string'||email.length>254||!/^\S+@\S+\.\S+$/.test(email))fail('Email inválido.');
    const m=await store.provision(email.trim().toLowerCase(),newRole);await store.audit(actor,'member.provision:'+m.user_id);
    return json({message:'Conta cadastrada. Nenhum convite foi enviado. O titular poderá pedir um código no portal.',member:m},201);
@@ -190,8 +198,8 @@ export async function handlePortal(req,env=process.env,injectedStore){
   }
   match=route.match(/^\/members\/([0-9a-f-]+)$/i);
   if(match&&method==='PATCH'){
-   requireRole('admin');if(!uuid(match[1])||match[1]===actor)fail('Não é possível alterar a própria conta.');
-   const {role:newRole,active}=await body();if(!['secretary','psychologist','social_worker','guardian','teacher'].includes(newRole)||typeof active!=='boolean')fail('Conta inválida.');
+   requireRole('admin','secretary');if(!uuid(match[1])||match[1]===actor)fail('Não é possível alterar a própria conta.');
+   const {role:newRole,active}=await body();if(!['psychologist','social_worker','guardian','teacher'].includes(newRole)||typeof active!=='boolean')fail('Conta inválida.');
    await store.setMember(actor,match[1],newRole,active);return json({message:'Conta atualizada. Os vínculos anteriores foram removidos; vincule novamente se necessário.'});
   }
   return json({message:'Operação não encontrada.'},404);
