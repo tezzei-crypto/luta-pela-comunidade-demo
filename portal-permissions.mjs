@@ -6,6 +6,7 @@ export const CARE_ROLES=['psychologist','social_worker'];
 export function requireRouteAccess(role,route,method){
  if(MANAGERS.includes(role)||role==='guardian')return;
  if(['/me','/auth/verify','/auth/logout'].includes(route))return;
+ if(CARE_ROLES.includes(role)&&method==='GET'&&(['/appointment-calendar','/appointment-calendar.csv'].includes(route)||/^\/bookings\/[0-9a-f-]{36}$/i.test(route)))return;
  const reports=route==='/reports'&&['GET','POST'].includes(method)||/^\/reports\/[0-9a-f-]{36}$/i.test(route)&&['GET','POST'].includes(method);
  if((role==='teacher'||CARE_ROLES.includes(role))&&(reports||['/units','/unit-roster'].includes(route)&&method==='GET'))return;
  if(CARE_ROLES.includes(role)&&((['/attendance-report','/attendance-report/options','/attendance-report.xlsx','/attendance-alerts'].includes(route)&&method==='GET')||/^\/attendance-alerts\/[0-9a-f-]{36}$/i.test(route)&&['GET','POST'].includes(method)))return;

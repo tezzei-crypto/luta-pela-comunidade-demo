@@ -26,7 +26,15 @@ export async function handleProfessionals({req,route,method,url,store,actor}){
  }
  if(route==='/available-slots'&&method==='GET')return json({slots:await store.availableSlots(actor,url.searchParams.get('student'))});
  if(route==='/bookings'&&method==='GET')return json({bookings:await store.bookings(actor)});
+ if(route==='/appointment-calendar'&&method==='GET')return json(await store.appointmentCalendar(actor,Object.fromEntries(url.searchParams)));
+ if(route==='/appointment-calendar.csv'&&method==='GET'){
+  const r=await store.appointmentCalendar(actor,Object.fromEntries(url.searchParams));await store.audit(actor,'calendar.export');
+  const statusNames={free:'Livre',pending:'Aguardando secretaria',confirmed:'Confirmado',completed:'Realizado',absent:'Não compareceu',withdrawn:'Horário retirado',expired:'Horário encerrado',unavailable:'Profissional indisponível'};
+  const rows=r.events.map(e=>({...e,status:statusNames[e.status],date:new Intl.DateTimeFormat('pt-BR',{timeZone:r.time_zone}).format(new Date(e.start_at)),start:new Intl.DateTimeFormat('pt-BR',{timeZone:r.time_zone,hour:'2-digit',minute:'2-digit'}).format(new Date(e.start_at)),end:new Intl.DateTimeFormat('pt-BR',{timeZone:r.time_zone,hour:'2-digit',minute:'2-digit'}).format(new Date(e.end_at))}));
+  return new Response(csv(rows,['date','start','end','unit','professional_name','service','status','student_id','student_name','booking_id']),{headers:{...headers,'Content-Type':'text/csv; charset=utf-8','Content-Disposition':'attachment; filename="calendario-atendimentos.csv"'}});
+ }
  const booking=route.match(/^\/bookings\/([0-9a-f-]{36})$/i);
+ if(booking&&method==='GET')return json({booking:await store.booking(actor,booking[1])});
  if(booking&&method==='PATCH')return json({booking:await store.reviewBooking(actor,booking[1],await body()),message:'Situação do atendimento atualizada. O registro não envia WhatsApp automaticamente.'});
  if(route==='/bookings.csv'&&method==='GET'){const m=await store.member(actor);if(!['admin','secretary'].includes(m.role))fail('Acesso não permitido.',403);const rows=await store.bookings(actor);await store.audit(actor,'bookings.export');return new Response(csv(rows,['id','student_id','student_name','professional_name','service','unit','start_at','end_at','status','contact_name','phone','reason','version']),{headers:{...headers,'Content-Type':'text/csv; charset=utf-8','Content-Disposition':'attachment; filename="agenda-restrita.csv"'}})}
  return null;
