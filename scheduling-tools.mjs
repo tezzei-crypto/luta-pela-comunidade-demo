@@ -1,6 +1,7 @@
 import {randomUUID,createHash} from 'node:crypto';
 import {fail} from './portal-domain.mjs';
 import {PROFESSIONAL_ROLES} from './professional-tools.mjs';
+import {calendarTools} from './calendar-tools.mjs';
 const now=()=>new Date().toISOString(),active="('pending','confirmed')";
 const prefix={amavale:'UND1_',valparaiso:'UND2_','vale-do-carangola':'UND3_'};
 const uuid=v=>typeof v==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
@@ -17,6 +18,8 @@ export function schedulingTools({db,get,all,run,tx,requireRole,audit,professiona
  const readBooking=(actor,id)=>{const m=requireRole(actor,['admin','secretary','guardian',...PROFESSIONAL_ROLES]),b=get(bookingQuery+' WHERE b.id=?',id);if(!b)fail('Solicitação não localizada.',404);if(PROFESSIONAL_ROLES.includes(m.role)&&b.professional_id!==actor||m.role==='guardian'&&!get('SELECT 1 FROM links WHERE user_id=? AND student_id=?',actor,b.student_id))fail('Acesso não permitido.',403);return b};
  const safe=b=>{const {request_hash,requested_by,...r}=b;return r};
  return {
+  ...calendarTools({all,requireRole,professionalProfile,professionalApproved}),
+  async booking(actor,id){return safe(readBooking(actor,id))},
   async slots(actor,uid){professionalAccess(actor,uid);return all(`SELECT s.*,b.id AS booking_id,b.status AS booking_status FROM appointment_slots s LEFT JOIN bookings b ON b.slot_id=s.id AND b.status IN ${active} WHERE s.professional_id=? AND s.end_at>=? ORDER BY start_at LIMIT 500`,uid,new Date(Date.now()-31*86400000).toISOString())},
   async createSlot(actor,p){return tx(()=>{const t=professionalAccess(actor,p.professional_id);if(!professionalApproved(t.user_id)||!t.units.includes(p.unit))fail('Profissional ainda não liberado neste núcleo.',403);const start=instant(p.day,p.start_time),end=instant(p.day,p.end_time);if(start<=now()||end<=start||+new Date(start)>Date.now()+366*86400000||+new Date(end)-new Date(start)>8*3600000)fail('Informe um horário futuro, com fim posterior ao início, em até um ano e com duração de até 8 horas.');if(get("SELECT 1 FROM appointment_slots WHERE professional_id=? AND state='open' AND start_at<? AND end_at>?",t.user_id,end,start))fail('Este intervalo sobrepõe outro horário do profissional.',409);const id=randomUUID();run('INSERT INTO appointment_slots(id,professional_id,unit,start_at,end_at,created_at) VALUES(?,?,?,?,?,?)',id,t.user_id,p.unit,start,end,now());audit(actor,'slot.create:'+id);return get('SELECT * FROM appointment_slots WHERE id=?',id)})},
   async cancelSlot(actor,id,version){return tx(()=>{const s=get('SELECT * FROM appointment_slots WHERE id=?',id);if(!s)fail('Horário não localizado.',404);professionalAccess(actor,s.professional_id);if(s.version!==version||s.state!=='open')fail('Horário alterado. Atualize a lista.',409);if(get(`SELECT 1 FROM bookings WHERE slot_id=? AND status IN ${active}`,id))fail('Há uma solicitação neste horário. A secretaria precisa cancelar e avisar a família primeiro.',409);run("UPDATE appointment_slots SET state='cancelled',version=version+1 WHERE id=?",id);audit(actor,'slot.cancel:'+id)})},

@@ -1,0 +1,48 @@
+import {calendarStatuses,localDay,addDays,shiftMonth,period,daysIn,dayLabel,hourLabel,groupEvents} from './calendar-model.js';
+
+export async function mountCalendar(host,c){
+ const {el,field,api,action,download,state,professionals,units,labels,onBooking,onFree}=c;
+ state.day||=localDay();state.view||=matchMedia('(max-width:760px)').matches?'day':'month';state.professional||='';state.unit||='';state.status||='';
+ host.classList.add('appointment-calendar');
+ const title=el('h3','Calendário de atendimentos'),intro=el('p','Veja os horários livres e os alunos agendados. Selecione um dia ou atendimento para consultar os detalhes. Todos os horários são de Brasília.',{class:'calendar-intro'}),controls=el('div',undefined,{class:'calendar-controls'}),navigation=el('div',undefined,{class:'calendar-navigation'}),heading=el('h4',''),views=el('div',undefined,{class:'calendar-views','aria-label':'Visualização do calendário'}),filters=el('div',undefined,{class:'calendar-filters'}),summary=el('div',undefined,{class:'calendar-summary'}),status=el('p','',{role:'status','aria-live':'polite',class:'muted'}),surface=el('div'),details=el('div',undefined,{class:'calendar-detail',id:'calendar-selected-day'}),record=el('section',undefined,{class:'calendar-record',hidden:'',tabindex:'-1'});
+ const button=(text,fn,attrs={})=>{const b=el('button',text,{type:'button',class:'secondary',...attrs});b.addEventListener('click',action(fn));return b};
+ const prev=button('Anterior',()=>move(-1),{'aria-label':'Período anterior'}),next=button('Próximo',()=>move(1),{'aria-label':'Próximo período'}),today=button('Hoje',async()=>{state.day=localDay();await load()});navigation.append(prev,today,next,heading);
+ for(const [value,label]of Object.entries({month:'Mês',week:'Semana',day:'Dia'})){const b=button(label,async()=>{state.view=value;await load()},{'data-view':value});views.append(b)}
+ const jumpBox=el('div'),jump=field(jumpBox,'Ir para a data','calendar_date',state.day,{type:'date',min:'2001-01-01',max:'2098-12-31'});jump.addEventListener('change',action(async()=>{if(!jump.value||!jump.checkValidity())return;state.day=jump.value;await load()}));controls.append(navigation,views,jumpBox);
+ const filter=(label,name,value,options,fn)=>{const box=el('div'),pick=field(box,label,name,value,{options});pick.addEventListener('change',action(async()=>{fn(pick.value);await load()}));filters.append(box);return pick};
+ filter('Profissional','calendar_professional',state.professional,{'':'Todos os profissionais',...Object.fromEntries(professionals.map(p=>[p.user_id,p.name]))},v=>state.professional=v);
+ filter('Núcleo','calendar_unit',state.unit,{'':'Todos os núcleos',...units},v=>state.unit=v);
+ filter('Situação','calendar_status',state.status,{'':'Todas as situações',...calendarStatuses},v=>state.status=v);
+ const tools=el('div',undefined,{class:'calendar-tools'}),refresh=button('Atualizar calendário',load),exportButton=button('Baixar calendário CSV',async()=>download(await api('/appointment-calendar.csv?'+query(),{blob:true}),'calendario-atendimentos.csv'));tools.append(refresh,exportButton);
+ host.replaceChildren(title,intro,controls,filters,summary,status,surface,details,record,tools);
+ let events=[],groups=new Map(),request=0;
+ function query(){return new URLSearchParams({...period(state.day,state.view),professional:state.professional,unit:state.unit,status:state.status})}
+ async function move(n){state.day=state.view==='month'?shiftMonth(state.day,n):addDays(state.day,n*(state.view==='week'?7:1));if(state.day<'2001-01-01')state.day='2001-01-01';if(state.day>'2098-12-31')state.day='2098-12-31';await load()}
+ async function load(){
+  const own=++request;host.setAttribute('aria-busy','true');status.textContent='Carregando horários…';surface.replaceChildren();details.replaceChildren();record.hidden=true;summary.replaceChildren();exportButton.disabled=true;
+  try{const result=await api('/appointment-calendar?'+query());if(own!==request||!host.isConnected)return;events=result.events;groups=groupEvents(events);render();status.textContent=events.length+' horários no período exibido. Atualizado às '+hourLabel(result.generated_at)+'.';exportButton.disabled=false}
+  catch(error){if(own!==request)return;status.textContent='Não foi possível carregar o calendário. '+error.message;surface.append(button('Tentar carregar novamente',load))}
+  finally{if(own===request)host.removeAttribute('aria-busy')}
+ }
+ function badge(event){return el('span',calendarStatuses[event.status],{class:'calendar-badge status-'+event.status})}
+ function render(){
+  const range=period(state.day,state.view);jump.value=state.day;heading.textContent=state.view==='month'?dayLabel(state.day,{month:'long',year:'numeric'}):state.view==='week'?dayLabel(range.from,{day:'numeric',month:'short'})+' a '+dayLabel(range.to,{day:'numeric',month:'short',year:'numeric'}):dayLabel(state.day);
+  for(const b of views.children)b.setAttribute('aria-pressed',String(b.dataset.view===state.view));
+  for(const [key,label]of [['free','Livres'],['pending','Aguardando secretaria'],['confirmed','Confirmados']]){const item=el('div',undefined,{class:'calendar-metric status-'+key});item.append(el('strong',String(events.filter(e=>e.status===key).length)),el('span',label));summary.append(item)}
+  if(state.view==='month')renderMonth(range);else if(state.view==='week')renderWeek(range);
+  renderDay(false);
+ }
+ function selectDay(day){const changed=state.day.slice(0,7)!==day.slice(0,7)&&state.view==='month';state.day=day;jump.value=day;record.hidden=true;if(changed)return load();for(const b of surface.querySelectorAll('[data-day]'))b.setAttribute('aria-pressed',String(b.dataset.day===day));renderDay(true)}
+ function renderMonth(range){
+  const table=el('table',undefined,{class:'calendar-month'}),head=el('thead'),tr=el('tr'),body=el('tbody');table.append(el('caption','Selecione um dia para ver os horários e alunos.'));
+  for(const day of ['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'])tr.append(el('th',day,{scope:'col'}));head.append(tr);table.append(head,body);
+  const days=daysIn(range);for(let row=0;row<6;row++){const line=el('tr');for(const day of days.slice(row*7,row*7+7)){const list=groups.get(day)||[],free=list.filter(e=>e.status==='free').length,cell=el('td'),b=button('',()=>selectDay(day),{'data-day':day,'aria-pressed':String(day===state.day),'aria-controls':'calendar-selected-day','aria-label':dayLabel(day)+'. '+list.length+' horários, '+free+' livres.',class:'calendar-day'+(day.slice(0,7)!==state.day.slice(0,7)?' outside-month':'')});if(day===localDay())b.setAttribute('aria-current','date');b.append(el('span',String(Number(day.slice(8))),{class:'calendar-day-number'}));if(list.length){b.append(el('span',list.length+' horários · '+free+' livres',{class:'calendar-count'}));for(const e of list.slice(0,2))b.append(el('span',hourLabel(e.start_at)+' '+calendarStatuses[e.status]+' · '+units[e.unit],{class:'calendar-mini status-'+e.status}));if(list.length>2)b.append(el('span','+'+(list.length-2)+' horários',{class:'calendar-more'}))}cell.append(b);line.append(cell)}body.append(line)}surface.append(table);
+ }
+ function renderWeek(range){const week=el('div',undefined,{class:'calendar-week'});for(const day of daysIn(range)){const column=el('div',undefined,{class:'calendar-week-day'}),b=button(dayLabel(day,{weekday:'short',day:'numeric',month:'short'}),()=>selectDay(day),{'data-day':day,'aria-pressed':String(day===state.day),'aria-controls':'calendar-selected-day'});column.append(b);const list=groups.get(day)||[];for(const e of list){const eventButton=button('',async()=>{state.day=day;renderDay(false);await openEvent(e)},{class:'calendar-week-event status-'+e.status});eventButton.append(el('strong',hourLabel(e.start_at)),badge(e),el('span',e.student_name||'Sem aluno agendado'),el('span',units[e.unit]),el('span',e.professional_name));column.append(eventButton)}if(!list.length)column.append(el('p','Sem horários',{class:'muted'}));week.append(column)}surface.append(week)}
+ function renderDay(focus){
+  const heading=el('h4',dayLabel(state.day),{tabindex:'-1'}),list=groups.get(state.day)||[];details.replaceChildren(heading);if(!list.length)details.append(el('p','Nenhum horário para este dia com os filtros selecionados.'));
+  for(const e of list){const card=el('div',undefined,{class:'calendar-event status-'+e.status}),time=el('div',undefined,{class:'calendar-time'}),text=el('div');time.append(el('strong',hourLabel(e.start_at)),el('span','até '+hourLabel(e.end_at)));text.append(badge(e),el('h5',e.student_name||'Sem aluno agendado'),el('p',units[e.unit]+' · '+e.professional_name),el('p',labels[e.service],{class:'muted'}));const actionButton=button(e.booking_id?'Ver atendimento':e.status==='free'?'Abrir horário livre':'Ver horário',()=>openEvent(e),{'aria-label':(e.booking_id?'Ver atendimento de '+e.student_name:'Ver horário '+calendarStatuses[e.status])+' às '+hourLabel(e.start_at)});card.append(time,text,actionButton);details.append(card)}if(focus)heading.focus({preventScroll:false});
+ }
+ async function openEvent(event){record.hidden=false;record.replaceChildren(el('h4',dayLabel(localDay(event.start_at))+' · '+hourLabel(event.start_at)+'–'+hourLabel(event.end_at)),badge(event),el('p',units[event.unit]+' · '+event.professional_name));try{if(event.booking_id)await onBooking(event,record,load);else await onFree(event,record,load)}catch(error){record.append(el('p',error.message,{class:'form-error',role:'alert'}),button('Atualizar calendário',load))}record.focus();record.scrollIntoView({block:'nearest'})}
+ await load();return {refresh:load};
+}
