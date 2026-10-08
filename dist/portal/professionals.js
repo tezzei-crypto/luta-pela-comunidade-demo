@@ -12,7 +12,7 @@ async function professionalDetail(uid){
 }
 let calendarState={};
 async function appendBookingCard(b,box,refresh=scheduleLoad){
- const row=el('section');row.append(el('h4',dateTimeBR(b.start_at)+' · '+b.student_name),el('p',b.professional_name+' · '+labels[b.service]+' · '+classUnits[b.unit]),el('strong',bookingNames[b.status]),el('p','Solicitante: '+b.contact_name+' · WhatsApp: '+b.phone),el('p','Protocolo: '+b.id,{class:'muted'}));if(b.reason)row.append(el('p',b.reason));
+ const row=el('section');row.append(el('h4',dateTimeBR(b.start_at)+' · '+b.student_name),el('p',b.professional_name+' · '+labels[b.service]+' · '+classUnits[b.unit]),el('strong',bookingNames[b.status]),phoneContact('Solicitante: '+b.contact_name+' · WhatsApp: '+b.phone,b.phone,b.contact_name),el('p','Protocolo: '+b.id,{class:'muted'}));if(b.reason)row.append(el('p',b.reason));
  if(['admin','secretary'].includes(me.role)&&['pending','confirmed'].includes(b.status)){
   const form=el('form'),options=b.status==='pending'?{confirmed:'Confirmar após WhatsApp',cancelled:'Cancelar'}:{completed:'Realizado',absent:'Não compareceu',cancelled:'Cancelar'};
   field(form,'Atualizar atendimento','status',Object.keys(options)[0],{options}).required=true;field(form,'Registro administrativo (sem conteúdo clínico)','reason','').required=true;

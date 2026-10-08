@@ -73,7 +73,8 @@ test('Turma nova não inventa chamadas anteriores ao cadastro; aulas históricas
 
 test('Migração de turma preserva vínculos, versões e o monitoramento de turmas antigas',async t=>{
  const f=await fixture(t),db=new DatabaseSync(path.join(f.dir,'portal.sqlite'));
- db.exec('ALTER TABLE class_groups DROP COLUMN created_day');db.close();f.reopen();
+ // Simulate the legacy schema, which predates both created_day and synchronization.
+ db.exec('DROP TRIGGER IF EXISTS sync_class_groups_update; ALTER TABLE class_groups DROP COLUMN created_day');db.close();f.reopen();
  const before=await f.store.group(f.admin.user_id,f.group.id);
  assert.equal(before.created_day,'');assert.deepEqual(before.teachers,[f.teacher.user_id]);assert.equal(before.students.filter(s=>s.enrolled).length,2);
  const updated=await f.store.saveGroup(f.admin.user_id,f.group.id,{...f.data,version:before.version,created_day:'2099-01-01'});

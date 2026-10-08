@@ -1,3 +1,4 @@
+import {systemSync} from './system-sync.mjs';
 import {diagnostics} from './diagnostics.mjs';
 import {contactSettings} from './contact-settings.mjs';
 import {attendanceInsights} from './attendance-insights.mjs';
@@ -181,5 +182,6 @@ export function createSqliteStore(env,{transport=fetch}={}){
   },
   async backup(){const dir=path.join(root,'backups');fs.mkdirSync(dir,{recursive:true,mode:0o700});const file=path.join(dir,'portal-'+nowIso().replace(/[:.]/g,'-')+'.sqlite');await backup(db,file);return file}
  };
+ Object.assign(api,systemSync({db,get,requireRole,secret:env.PORTAL_SECRET}));
  return api;
 }
