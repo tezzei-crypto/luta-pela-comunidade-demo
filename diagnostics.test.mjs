@@ -95,6 +95,20 @@ test('Navegador: só confirma inscrição com resposta JSON e protocolo',async()
  const valid=createRequestFeedback({fetcher:async()=>Response.json({protocol:'test-protocol'}),report:()=>{throw Error('not needed')}});
  assert.equal((await valid.requestJson('/api/registrations',{},'protocol')).protocol,'test-protocol');
 });
+
+test('Navegador: timeout cobre o corpo da resposta depois dos cabeçalhos, inclusive downloads',async()=>{
+ for(const method of ['requestJson','requestResponse']){
+  const reports=[],client=createRequestFeedback({timeoutMs:10,report:event=>reports.push(event),fetcher:async(url,options)=>new Response(new ReadableStream({start(controller){options.signal.addEventListener('abort',()=>controller.error(Error('interrupted')),{once:true})}}),{headers:{'Content-Type':'application/json'}})});
+  await assert.rejects(client[method]('/api/registrations'),error=>error.kind==='timeout');
+  assert.equal(reports.length,1);assert.equal(reports[0].kind,'timeout');
+ }
+});
+
+test('Navegador: download completo mantém bytes, status e cabeçalhos',async()=>{
+ const bytes=new Uint8Array([0,255,128,1]),client=createRequestFeedback({fetcher:async()=>new Response(bytes,{headers:{'Content-Type':'application/octet-stream'}}),report:()=>assert.fail('Não deve registrar erro')});
+ const response=await client.requestResponse('/api/portal/test-file');
+ assert.equal(response.status,200);assert.equal(response.headers.get('Content-Type'),'application/octet-stream');assert.deepEqual(new Uint8Array(await response.arrayBuffer()),bytes);
+});
 test('Servidor: inscrição completa, confirmação correlacionada e diagnóstico privado',async t=>{
  const f=await fixture(t);
  const child=spawn(process.execPath,['server.mjs'],{cwd:import.meta.dirname,env:{...process.env,...f.env,PORT:'0',HOST:'127.0.0.1',PUBLIC_ORIGIN:'',RENDER_EXTERNAL_URL:'',ADDITIONAL_PUBLIC_ORIGINS:'',RENDER:'false',RESEND_API_KEY:'',MAIL_FROM:'',BOOTSTRAP_STUDENTS_FILE:'',BOOTSTRAP_CONTACTS_FILE:'',BOOTSTRAP_AMAVALE_GROUPS:'false'},stdio:['ignore','pipe','pipe']});

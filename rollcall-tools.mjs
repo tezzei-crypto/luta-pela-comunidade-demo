@@ -19,6 +19,7 @@ export function rollcallTools({db,get,all,run,tx,requireRole,audit,env,transport
   const groups=all('SELECT * FROM class_groups');
   for(const g of groups)for(const day of dates){
    const old=get('SELECT * FROM rollcall_issues WHERE group_id=? AND day=?',g.id,day),weekday=new Date(day+'T12:00:00Z').getUTCDay();
+   if(!old&&g.created_day&&day<g.created_day&&!get('SELECT 1 FROM classes WHERE group_id=? AND day=?',g.id,day))continue;
    if(!old&&(!g.active||!JSON.parse(g.weekdays).includes(weekday)||+clock<+new Date(day+'T'+g.end_time+':00-03:00')+3600000))continue;
    const c=get('SELECT * FROM classes WHERE group_id=? AND day=?',g.id,day),teachers=all("SELECT m.user_id,p.name FROM group_teachers gt JOIN members m ON m.user_id=gt.teacher_id JOIN teacher_profiles p ON p.user_id=m.user_id WHERE gt.group_id=? AND m.active=1 AND m.role='teacher' AND (p.status='verified' OR p.test_access=1) AND EXISTS(SELECT 1 FROM teacher_units tu WHERE tu.user_id=m.user_id AND tu.unit=?)",g.id,g.unit);
    const roster=c?all('SELECT student_id FROM class_students WHERE class_id=?',c.id):all("SELECT gs.student_id FROM group_students gs JOIN students s ON s.id=gs.student_id WHERE gs.group_id=? AND s.status='approved'",g.id);
