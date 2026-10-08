@@ -32,7 +32,7 @@ async function registrations(){
  $('registrations-previous').dataset.locked=String(registrationPage===0);$('registrations-next').dataset.locked=String(!p.has_more);
 }
 async function review(id){
- const r=(await api('/registrations/'+id)).registration,box=$('registration-detail');box.hidden=false;box.replaceChildren(el('h3',r.student_name),el('p',`${r.age} anos · ${unitNames[r.unit]} · ${decisionNames[r.status]}`),el('p','Protocolo: '+r.id,{class:'muted'}),el('p','Responsável: '+r.guardian_name+' · '+r.relationship),el('p',r.guardian_email+' · '+r.guardian_phone));
+ const r=(await api('/registrations/'+id)).registration,box=$('registration-detail');box.hidden=false;box.replaceChildren(el('h3',r.student_name),el('p',`${r.age} anos · ${unitNames[r.unit]} · ${decisionNames[r.status]}`),el('p','Protocolo: '+r.id,{class:'muted'}),el('p','Responsável: '+r.guardian_name+' · '+r.relationship),phoneContact(r.guardian_email+' · '+r.guardian_phone,r.guardian_phone,r.guardian_name));
  documentChecklist(box,r.documents);if(r.source==='staff')box.append(el('p','Origem: cadastro administrativo · '+r.source_reference));
  if(r.reason)box.append(el('p','Última decisão: '+r.reason));if(r.student_id){box.append(el('p','ID vinculado: '+r.student_id));const open=el('button','Abrir ficha do aluno aprovado');open.addEventListener('click',action(()=>detail(r.student_id)));box.append(open)}
  for(const d of r.documents){const b=el('button','Baixar '+(kinds[d.kind]||'documento'),{class:'secondary'});b.addEventListener('click',action(async()=>download(await api('/registrations/'+id+'/documents/'+d.id,{blob:true}),'inscricao-'+d.id+(d.mime==='application/pdf'?'.pdf':d.mime==='image/png'?'.png':'.jpg'))));box.append(b)}
