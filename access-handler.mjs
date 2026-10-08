@@ -1,12 +1,13 @@
 import {readFile} from 'node:fs/promises';
-import {createStore} from './portal-store.mjs';
-const registryPath=new URL('./data/approved-students.json',import.meta.url);
-export async function loadApprovedStudents(){
- if(process.env.PORTAL_REGISTRY_ACTIVE==='true'){
-  const rows=await createStore(process.env).students();
+import {createStore,portalConfigured} from './portal-store.mjs';
+const registryPath=new URL('../../private-data/approved-students.json',import.meta.url);
+export const usesPortalRegistry=env=>portalConfigured(env)||env.PORTAL_REGISTRY_ACTIVE==='true';
+export async function loadApprovedStudents(env=process.env,storeFactory=createStore){
+ if(usesPortalRegistry(env)){
+  const rows=await storeFactory(env).students();
   return rows.map(({id,status})=>({id,status}));
  }
- const raw=process.env.APPROVED_STUDENTS_JSON;
+ const raw=env.APPROVED_STUDENTS_JSON;
  const data=JSON.parse(raw===undefined?await readFile(registryPath,'utf8'):raw);
  if(data.version!==1||!Array.isArray(data.students))throw Error('Invalid registry');
  if(data.students.some(s=>!s||!/^UND[1-3]_\d{6}$/.test(s.id)||!['approved','pending','inactive'].includes(s.status)))throw Error('Invalid student');
