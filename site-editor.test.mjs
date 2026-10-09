@@ -1,5 +1,6 @@
 import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import os from 'node:os';import path from 'node:path';import {spawn} from 'node:child_process';
 import sharp from 'sharp';import {parse} from 'parse5';import {once} from 'node:events';
+import vm from 'node:vm';
 import {createSqliteStore} from './portal-sqlite.mjs';import {handlePortal} from './portal-handler.mjs';import {handleContact} from './contact-handler.mjs';
 import {catalogFor,editorPages,validEditorLink} from './site-editor-template.mjs';import {prepareSiteImage} from './site-editor.mjs';
 async function fixture(t){
@@ -9,6 +10,23 @@ async function fixture(t){
  return {dir,env,admin,get store(){return store},reopen(){store.close();store=createSqliteStore(env,{transport})},async token(email='admin@example.test'){await store.requestCode(email);return (await store.verifyCode(email,mail.at(-1).text.match(/\b\d{8}\b/)[0])).access_token}};
 }
 const edit=(d,f,value)=>({version:d.version,data:{schema_hash:d.schema_hash,values:[{id:f.id,value}]}});
+
+test('Editor: treinamento substitui a consulta de agendamento e preserva o próprio HTML publicado',()=>{
+ const source=fs.readFileSync(new URL('./dist/training.js',import.meta.url),'utf8');
+ for(const existing of [false,true]){
+  let writes=0,lookups=0,rendered='';const stop=new Error('binding-ready');
+  const document={title:'Título personalizado',documentElement:{hasAttribute:()=>true,getAttribute:()=>existing?'/treinamento/':'/agendamento/'},querySelector(selector){
+   if(selector==='main')return {set innerHTML(value){rendered=value;writes++}};
+   if(selector==='main form')return {};
+   if(selector==='#training-login'){if(++lookups===1)return existing?{}:null;throw stop}
+   return null;
+  }};
+  assert.throws(()=>vm.runInNewContext(source+'\nrenderTraining(true);',{document,location:{pathname:'/agendamento/'},window:{addEventListener(){}},crypto:{randomUUID:()=> 'test'}}),error=>error===stop);
+  assert.equal(writes,existing?0:1);
+  if(existing)assert.equal(document.title,'Título personalizado');
+  else{assert.match(rendered,/id="training-login"/);assert.match(rendered,/id="training-booking"/);assert.match(document.title,/Treinamento/)}
+ }
+});
 test('Editor: catálogo cobre páginas reais, formulários e imagens dos núcleos sem código executável',()=>{
  assert.equal(editorPages.length,9);
  for(const p of editorPages){const c=catalogFor(p.page);assert.ok(c.fields.length>10);assert.equal(new Set(c.fields.map(f=>f.id)).size,c.fields.length);assert.ok(!c.fields.some(f=>f.value.includes('function renderTraining')||f.value.includes('addEventListener')))}
