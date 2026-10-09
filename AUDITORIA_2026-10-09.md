@@ -4,8 +4,8 @@ Projeto: Luta pela Comunidade. Escopo: código do servidor e das interfaces, per
 
 ## Resultado reproduzível
 
-- Node.js 24.19.0: `node --test --experimental-test-coverage *.test.mjs` — **232 testes aprovados, zero falhas**, em 31,34 segundos.
-- Os 232 incluem nove cenários da interface executados em DOM simulado (JSDOM), além do teste que executa esse conjunto. Não equivalem a 232 jornadas manuais nem a validação visual em dispositivos reais.
+- Node.js 24.19.0: `node --test --experimental-test-coverage *.test.mjs` — **233 testes aprovados, zero falhas**, em 18,52 segundos.
+- Os 233 incluem dez cenários da interface executados em DOM simulado (JSDOM), além do teste que executa esse conjunto. Não equivalem a 233 jornadas manuais nem a validação visual em dispositivos reais.
 - Análise estática: 109 arquivos JavaScript/MJS com sintaxe válida; 14 páginas, 402 referências verificadas, sem referências locais ausentes ou IDs duplicados. Busca heurística sem indícios de segredos no conteúdo público, sem garantia de detecção absoluta.
 - Cobertura dos arquivos carregados pelo coletor: 96,93% das linhas, 84,89% dos ramos e 92,67% das funções. Não representa cobertura de todo o produto: processos separados e parte da interface ficam fora dessa medição.
 - Auditoria das dependências: zero vulnerabilidades conhecidas na consulta realizada após atualização do Sharp para 0.35.5. Incluídos arquivo de versões travadas e dependências de teste no build.
@@ -47,3 +47,5 @@ Aceitação pelo provedor de email não comprova chegada à caixa de entrada. Te
 A publicação e a conferência visual autenticada precisam ser registradas separadamente deste resultado local. O servidor local não ficou acessível ao navegador controlado neste ambiente; os cenários de interface foram executados em JSDOM. Para revisão manual isolada em ambiente que suporte localhost: `node browser-audit.mjs`, depois abrir `http://127.0.0.1:4319/`.
 
 Reprodução: `npm ci --ignore-scripts --no-audit --no-fund`, `npm test`. A suíte completa executa também `browser-audit.test.mjs`. Auditoria de dependências: `npm audit`.
+
+A conferência no navegador após a primeira publicação revelou bloqueio compartilhado indevido entre os eventos de inicialização dos painéis. A regressão foi reproduzida em teste e corrigida: a trava de duplicidade aplica-se apenas a formulários e botões. O teste adicional confirma o carregamento independente de agenda, chamada, turmas e equipe.

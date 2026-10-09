@@ -9,6 +9,6 @@ test('Interface da agenda: regressões de concorrência, confirmação e recuper
   child.stdout.on('data',s=>out+=s);child.stderr.on('data',s=>errors+=s);child.on('error',e=>{clearTimeout(timer);reject(e)});
   child.on('close',code=>{clearTimeout(timer);if(code!==0)return reject(Error(errors));try{resolve(JSON.parse(out))}catch(e){reject(Error('Relatório da interface inválido: '+out))}});
  });
- assert.equal(result.cases.length,9);
+ assert.equal(result.cases.length,10);
  for(const row of result.cases)await t.test(row.result.replace(/^PASSOU · |^FALHOU · /,''),()=>assert.equal(row.pass,true,row.result));
 });

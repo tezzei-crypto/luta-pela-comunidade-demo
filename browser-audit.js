@@ -48,6 +48,14 @@ await test('Painel captura todos os campos, bloqueia reenvio e restaura o formul
 });
 function el(tag,text,attrs={}){const e=document.createElement(tag);if(text!==undefined)e.textContent=text;for(const [k,v]of Object.entries(attrs))e.setAttribute(k,v);return e}
 function field(host,label,name,value,attrs={}){const line=el('label',label),e=el(attrs.options?'select':'input',undefined,{name});if(attrs.options)for(const [v,t]of Object.entries(attrs.options))e.append(new Option(t,v));else for(const [k,v]of Object.entries(attrs))e.setAttribute(k,v);e.value=value;line.append(e);host.append(line);return e}
+await test('Carregamento do portal inicia todos os painéis no mesmo evento',async()=>{
+ const action=createPortalAction({notice:()=>{},el}),started=[],releases=[],handlers=['agenda','chamada','turmas','equipe'].map(name=>action(async()=>{started.push(name);await new Promise(resolve=>releases.push(resolve))}));
+ for(const handler of handlers)document.addEventListener('audit:portal-loaded',handler);
+ document.dispatchEvent(new Event('audit:portal-loaded'));
+ const count=started.length;releases.forEach(resolve=>resolve());
+ for(const handler of handlers)document.removeEventListener('audit:portal-loaded',handler);
+ assert(count===4,'Um painel bloqueou o carregamento dos demais');
+});
 await test('Calendário: resposta lenta do atendimento anterior não aparece na seleção atual',async()=>{
  const host=document.querySelector('main');host.replaceChildren();const finish={},events=[1,2].map(i=>({...slot,id:'slot-'+i,booking_id:'booking-'+i,student_name:'Aluno fictício '+i,student_id:'UND1_00000'+i,service:'social_worker',status:'pending'}));
  await mountCalendar(host,{el,field,api:async()=>({events,generated_at:new Date().toISOString()}),action:fn=>async e=>{e?.preventDefault();await fn()},download:()=>{},state:{day,view:'day'},professionals:[],units:{amavale:'Amavale'},labels:{social_worker:'Assistência social'},onBooking:async(e,record)=>{await new Promise(r=>finish[e.booking_id]=r);record.append(el('p','Detalhes de '+e.student_name))},onFree:()=>{}});
