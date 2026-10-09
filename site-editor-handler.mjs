@@ -3,7 +3,7 @@ export async function handleSiteEditor({req,route,method,url,store,actor,require
  if(!route.startsWith('/site-editor'))return null;
  requireRole('admin','secretary');
  const json=data=>Response.json(data,{headers:{'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
- const body=async()=>{try{return await req.json()}catch{fail('Dados inválidos.')}};
+ const body=async()=>{try{const p=await req.json();if(!p||typeof p!=='object'||Array.isArray(p))throw Error();return p}catch{fail('Dados inválidos.')}};
  if(route==='/site-editor/pages'&&method==='GET')return json(await store.editorPages(actor));
  if(route==='/site-editor/media'&&method==='POST'){
   let form;try{form=await req.formData()}catch{fail('Envio inválido.')}

@@ -45,7 +45,8 @@ export function rollcallTools({db,get,all,run,tx,requireRole,audit,env,transport
    for(const m of eligible){
     run('INSERT OR IGNORE INTO rollcall_notices(issue_id,recipient_id) VALUES(?,?)',id,m.user_id);
     const n=get('SELECT * FROM rollcall_notices WHERE issue_id=? AND recipient_id=?',id,m.user_id);
-    if(n.send_count<p.max_notices&&['accepted','cancelled'].includes(n.status)&&(!n.last_sent||now-n.last_sent>=p.repeat_hours*3600000))run("UPDATE rollcall_notices SET status='pending',attempts=0,first_attempt=0,next_attempt=?,claim_token='',lease_until=0,payload='' WHERE issue_id=? AND recipient_id=?",now,id,m.user_id);
+    if(n.status==='cancelled'&&n.attempts>0&&n.payload&&n.send_count<p.max_notices){run("UPDATE rollcall_notices SET status='retry',claim_token='',lease_until=0 WHERE issue_id=? AND recipient_id=?",id,m.user_id)}
+    else if(n.send_count<p.max_notices&&['accepted','cancelled'].includes(n.status)&&(!n.last_sent||now-n.last_sent>=p.repeat_hours*3600000))run("UPDATE rollcall_notices SET status='pending',attempts=0,first_attempt=0,next_attempt=?,claim_token='',lease_until=0,payload='' WHERE issue_id=? AND recipient_id=?",now,id,m.user_id);
    }
    for(const n of all('SELECT * FROM rollcall_notices WHERE issue_id=?',id))if(!eligible.some(m=>m.user_id===n.recipient_id)||n.send_count>=p.max_notices){
     if(['pending','retry','sending'].includes(n.status))run("UPDATE rollcall_notices SET status='cancelled',claim_token='',lease_until=0 WHERE issue_id=? AND recipient_id=?",id,n.recipient_id);

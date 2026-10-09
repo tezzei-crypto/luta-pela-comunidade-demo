@@ -3,7 +3,7 @@ import {fail,KINDS,fileType,csv} from './portal-domain.mjs';
 const headers={'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'};
 const json=(p,s=200)=>Response.json(p,{status:s,headers});
 export async function handleStudentDetails({req,route,method,store,actor}){
- const body=async()=>{try{return await req.json()}catch{fail('Dados inválidos.')}};
+ const body=async()=>{try{const p=await req.json();if(!p||typeof p!=='object'||Array.isArray(p))throw Error();return p}catch{fail('Dados inválidos.')}};
  const progression=route.match(/^\/students\/(UND[1-3]_\d{6})\/progression(\/confirm)?$/);
  if(progression){
   if(method==='GET'&&!progression[2])return json({progression:await store.studentProgression(actor,progression[1])});

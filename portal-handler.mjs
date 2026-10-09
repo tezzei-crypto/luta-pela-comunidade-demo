@@ -28,7 +28,7 @@ export async function handlePortal(req,env=process.env,injectedStore){
    if(!sameOrigin(req,env))fail('Origem não permitida.',403);
   }
   const store=injectedStore||createStore(env);
-  const body=async()=>{try{return await req.json()}catch{fail('Dados inválidos.')}};
+  const body=async()=>{try{const p=await req.json();if(!p||typeof p!=='object'||Array.isArray(p))throw Error();return p}catch{fail('Dados inválidos.')}};
   if(route==='/auth/request'&&method==='POST'){
    const {email}=await body();if(typeof email!=='string'||email.length>254||!/^\S+@\S+\.\S+$/.test(email))fail('Informe um email válido.');
    // Mesma resposta para contas ausentes, evitando enumeração de responsáveis.

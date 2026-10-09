@@ -2,7 +2,7 @@ import {randomUUID} from 'node:crypto';
 import {fail,fileType,csv} from './portal-domain.mjs';
 const headers={'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer'},json=(p,s=200)=>Response.json(p,{status:s,headers});
 export async function handleProfessionals({req,route,method,url,store,actor}){
- const body=async()=>{try{return await req.json()}catch{fail('Dados inválidos.')}};
+ const body=async()=>{try{const p=await req.json();if(!p||typeof p!=='object'||Array.isArray(p))throw Error();return p}catch{fail('Dados inválidos.')}};
  if(route==='/appointment-requests'&&method==='GET')return json({requests:await store.appointmentRequests(actor,url.searchParams.get('status')||'waiting')});
  if(route==='/appointment-requests'&&method==='POST')return json({request:await store.createAppointmentRequest(await body(),actor),message:'Solicitação recebida por outro canal registrada no painel. Nenhuma mensagem foi enviada.'},201);
  const requestMatch=route.match(/^\/appointment-requests\/([0-9a-f-]{36})(\/slots)?$/i);
@@ -26,7 +26,7 @@ export async function handleProfessionals({req,route,method,url,store,actor}){
  const doc=route.match(/^\/professional-documents\/([0-9a-f-]{36})\/download$/i);
  if(doc&&method==='GET'){const d=await store.professionalDocument(actor,doc[1]);await store.audit(actor,'professional.document.download:'+d.id);const r=await store.download(d.object_path);return new Response(r.body,{headers:{...headers,'Content-Type':d.mime,'Content-Disposition':`attachment; filename="profissional-${d.id}.${d.mime==='application/pdf'?'pdf':d.mime==='image/png'?'png':'jpg'}"`}})}
  if(route==='/slots'&&method==='GET')return json({slots:await store.slots(actor,url.searchParams.get('professional'))});
- if(route==='/slots'&&method==='POST')return json({slot:await store.createSlot(actor,await body()),message:'Horário disponível para solicitação dos alunos do núcleo.'},201);
+ if(route==='/slots'&&method==='POST')return json({slot:await store.createSlot(actor,await body()),message:'Horário disponível para solicitação dos alunos aprovados.'},201);
  const slot=route.match(/^\/slots\/([0-9a-f-]{36})(\/book)?$/i);
  if(slot&&method==='PATCH'&&!slot[2])return json({slot:await store.updateSlot(actor,slot[1],await body()),message:'Modalidade e local atualizados.'});
  if(slot&&method==='POST'){
