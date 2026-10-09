@@ -11,7 +11,7 @@ export function projectTools({db,get,all,run,tx,requireRole,audit,requireUnit,on
  const groups=classGroups({db,get,all,run,tx,requireRole,requireUnit,audit});
  for(const [name,type]of [['cancelled','INTEGER NOT NULL DEFAULT 0'],['cancellation_reason',"TEXT NOT NULL DEFAULT ''"]])if(!all('PRAGMA table_info(classes)').some(c=>c.name===name))db.exec('ALTER TABLE classes ADD COLUMN '+name+' '+type);
  function lessonAccess(actor,lesson){const m=requireRole(actor,['admin','secretary','teacher']);requireUnit(actor,lesson.unit);if(m.role==='teacher'){if(!lesson.group_id)fail('Use uma turma vinculada ao seu cadastro.',403);groups.groupRead(actor,lesson.group_id)}}
- const api={...groups,
+ const api={...groups,lessonAccess,
   approvedContact(r,actor){
    run('INSERT INTO student_contacts(student_id,guardian_name,guardian_email,guardian_phone) VALUES(?,?,?,?) ON CONFLICT(student_id) DO UPDATE SET guardian_name=excluded.guardian_name,guardian_email=excluded.guardian_email,guardian_phone=excluded.guardian_phone',r.student_id,r.guardian_name,r.guardian_email.toLowerCase(),r.guardian_phone);
    const email=r.guardian_email.trim().toLowerCase();let m=get('SELECT * FROM members WHERE email=?',email);

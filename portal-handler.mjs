@@ -1,3 +1,4 @@
+import {handleClassEvidence} from './class-evidence-handler.mjs';
 import {sameOrigin} from './request-origin.mjs';
 import {handleSiteEditor} from './site-editor-handler.mjs';
 import {handleAttendanceInsights} from './attendance-insights-handler.mjs';
@@ -55,6 +56,7 @@ export async function handlePortal(req,env=process.env,injectedStore){
   if(route==='/diagnostics/settings'&&method==='PATCH'){requireRole('admin');return json({settings:store.configureDiagnostics(actor,await body())});}
 
   if(route==='/contact-settings'){requireRole('admin','secretary');if(method==='GET')return json({settings:await store.contactSettings(actor)});if(method==='PATCH')return json({settings:await store.saveContactSettings(actor,await body()),message:'Contato da secretaria atualizado no site.'});}
+  const evidenceResponse=await handleClassEvidence({req,route,method,store,actor});if(evidenceResponse)return evidenceResponse;
   const attendanceInsights=await handleAttendanceInsights({req,route,method,url,store,actor});if(attendanceInsights)return attendanceInsights;
   const workforce=await handleWorkforce({req,route,method,url,store,actor});if(workforce)return workforce;
   const linked=(await store.links(actor)).map(l=>l.student_id);
