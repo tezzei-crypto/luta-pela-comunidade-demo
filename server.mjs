@@ -2,6 +2,7 @@ import {observeRequest,handleClientDiagnostic} from './diagnostic-http.mjs';
 import {requestOrigin} from './request-origin.mjs';
 import {clientAddress} from './client-address.mjs';
 import {withSocialPreview} from './social-preview.mjs';
+import {editorPages} from './site-editor-template.mjs';
 import {handleContact} from './contact-handler.mjs';
 import {initializePortal} from './portal-bootstrap.mjs';
 import {handleAccess} from './access-handler.mjs';
@@ -21,7 +22,9 @@ async function serveRequest(req,res){
  const send=async response=>{let payload=Buffer.from(await response.arrayBuffer());const headers=Object.fromEntries(response.headers);if(response.status>=400&&headers['content-type']?.includes('application/json')){try{payload=Buffer.from(JSON.stringify({...JSON.parse(payload),support_id:req.headers['x-support-id']}));delete headers['content-length']}catch{}}res.writeHead(response.status,headers);res.end(payload)};
  if(url.pathname==='/api/diagnostics'){await handleClientDiagnostic(req,res,url,process.env);return;}
 
- if(url.pathname==='/api/contact'||url.pathname==='/api/contact/whatsapp'){await send(await handleContact(new Request(url,{method:req.method}),process.env));return;}
+ if(['/api/contact','/api/contact/whatsapp','/api/contact/conversation'].includes(url.pathname)){await send(await handleContact(new Request(url,{method:req.method}),process.env));return;}
+ const siteMedia=/^\/site-media\/([a-f0-9-]{36})\.webp$/.exec(url.pathname);
+ if(siteMedia){try{if(!['GET','HEAD'].includes(req.method)){res.writeHead(405).end();return}const m=createStore(process.env).editorPublicMedia(siteMedia[1]);res.writeHead(200,{'Content-Type':m.mime,'Cache-Control':'public, max-age=31536000, immutable','X-Content-Type-Options':'nosniff'}).end(req.method==='HEAD'?undefined:m.bytes)}catch{res.writeHead(404,{'Cache-Control':'no-store'}).end()}return;}
  if(url.pathname==='/api/health'&&req.method==='GET'){
   try{if(portalConfigured(process.env))await createStore(process.env).members();await send(Response.json({ok:true},{headers:{'Cache-Control':'no-store'}}))}catch{await send(Response.json({ok:false},{status:503,headers:{'Cache-Control':'no-store'}}))}return;
  }
@@ -39,7 +42,7 @@ async function serveRequest(req,res){
   limits.set(key,entry&&now-entry.start<600000?{...entry,count:entry.count+1}:{start:now,count:1});
   const chunks=[];let size=0;
   try{
-   for await(const chunk of req){size+=chunk.length;if(size>(url.pathname.endsWith('/documents')?6*1024*1024:2*1024*1024)){res.writeHead(413,{'Content-Type':'application/json','Cache-Control':'no-store'}).end(JSON.stringify({message:'Envio acima do limite permitido.'}));return}chunks.push(chunk)}
+   for await(const chunk of req){size+=chunk.length;if(size>(url.pathname==='/api/portal/site-editor/media'?9*1024*1024:url.pathname.endsWith('/documents')?6*1024*1024:2*1024*1024)){res.writeHead(413,{'Content-Type':'application/json','Cache-Control':'no-store'}).end(JSON.stringify({message:'Envio acima do limite permitido.'}));return}chunks.push(chunk)}
    await send(await handlePortal(new Request(url,{method:req.method,headers:req.headers,...(!['GET','HEAD'].includes(req.method)?{body:Buffer.concat(chunks)}:{})}),process.env));
   }catch{await send(Response.json({message:'Não foi possível concluir a operação.'},{status:500,headers:{'Cache-Control':'no-store'}}))}return;
  }
@@ -55,13 +58,15 @@ async function serveRequest(req,res){
   try{await send(await (url.pathname==='/api/agenda/slots'?handleAgendaSlots:url.pathname==='/api/student-access'?(request=>handleAccess(request)):['/api/agenda','/api/training-agenda'].includes(url.pathname)?handleAgenda:url.pathname==='/api/sponsorships'?handleSponsorship:handleRegistration)(new Request(url,{method:'POST',headers:req.headers,body:Buffer.concat(chunks)}),process.env))}catch{await send(Response.json({message:'Não foi possível processar a inscrição.'},{status:500}))}return;
  }
  if(!['GET','HEAD'].includes(req.method)){res.writeHead(405).end();return}
- if(url.pathname.startsWith('/portal')||url.pathname.startsWith('/administracao')||url.pathname.startsWith('/professor')||url.pathname.startsWith('/psicologia')||url.pathname.startsWith('/assistencia-social')){res.setHeader('Cache-Control','no-store');res.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")}
+ if(url.pathname.startsWith('/portal')||url.pathname.startsWith('/administracao')||url.pathname.startsWith('/professor')||url.pathname.startsWith('/psicologia')||url.pathname.startsWith('/assistencia-social')){res.setHeader('Cache-Control','no-store');res.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; frame-src 'self' about:; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")}
  let file;try{file=path.resolve(root,'.'+decodeURIComponent(url.pathname))}catch{res.writeHead(400).end();return}
  if(!file.startsWith(root+path.sep)&&file!==root){res.writeHead(403).end();return}
  if(fs.existsSync(file)&&fs.statSync(file).isDirectory())file=path.join(file,'index.html');if(!fs.existsSync(file)){res.writeHead(404).end();return}
  res.setHeader('Content-Type',({'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8','.png':'image/png','.jpeg':'image/jpeg','.jpg':'image/jpeg','.svg':'image/svg+xml'})[path.extname(file)]||'application/octet-stream');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','same-origin');if(req.method==='HEAD')res.end();else if(path.extname(file)==='.html'){
   // One shared entry point also covers staff portals that do not load app.js.
-  const html=withSocialPreview(await fs.promises.readFile(file,'utf8'),url.pathname);res.end(html.replace(/<\/body>/i,'<script src="/contact-widget.js" defer></script>'+(/^\/(administracao|portal|professor|psicologia|assistencia-social)\//.test(url.pathname)?'<script src="/portal/diagnostics.js" defer></script>':'')+'</body>'));
+  const page=url.pathname.replace(/index\.html$/,'');let source=await fs.promises.readFile(file,'utf8');
+  if(portalConfigured(process.env)&&editorPages.some(p=>p.page===page)){source=createStore(process.env).editorPublicHtml(page);res.setHeader('Cache-Control','no-store');}
+  const html=withSocialPreview(source,page);res.end(html.replace(/<\/body>/i,'<script src="/contact-widget.js" defer></script>'+(/^\/(administracao|portal|professor|psicologia|assistencia-social)\//.test(url.pathname)?'<script src="/portal/diagnostics.js" defer></script><script src="/portal/site-editor.js" defer></script>':'')+'</body>'));
  }else fs.createReadStream(file).pipe(res);
 }
 http.createServer((req,res)=>{const diagnostic=observeRequest(req,res,process.env);serveRequest(req,res).catch(error=>diagnostic.fail(error))}).listen(port,process.env.HOST||'0.0.0.0',function(){console.log(`Local: http://127.0.0.1:${this.address().port}`)});

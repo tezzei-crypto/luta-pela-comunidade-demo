@@ -7,8 +7,9 @@ export async function handleContact(req,env=process.env,injectedStore){
   if(!portalConfigured(env))return Response.json({message:'Contato temporariamente indisponível.'},{status:503,headers});
   const store=injectedStore||createStore(env),url=new URL(req.url);
   if(url.pathname==='/api/contact')return Response.json(await store.publicContact(),{headers});
+  if(url.pathname==='/api/contact/conversation')return Response.json(store.publicConversation(),{headers});
   if(url.pathname==='/api/contact/whatsapp'){
-   let message;try{message=contactMessage(url.searchParams.get('profile'),url.searchParams.get('unit')||'')}catch{return Response.json({message:'Escolha seu perfil e um núcleo válido.'},{status:400,headers})}
+   let message;try{message=store.conversationMessage(url.searchParams.get('profile'),url.searchParams.get('unit')||'')}catch{return Response.json({message:'Escolha seu perfil e um núcleo válido.'},{status:400,headers})}
    const phone=await store.contactDestination();
    return new Response(null,{status:302,headers:{...headers,Location:'https://wa.me/'+phone+'?text='+encodeURIComponent(message)}});
   }
