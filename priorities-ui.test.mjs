@@ -21,3 +21,9 @@ test('Interface da foto: decisão inclui versão e fotografia vistas; professor 
  const posted=[];let manager=true;const api=async(route,p)=>{if(p?.blob)return new Blob(['image']);if(p?.method==='POST'){posted.push(p.data);return {message:'Conferido'}}return {lesson:{cancelled:false},check:{status:'pending',version:7,attendance_fingerprint:'snapshot'},photos:[{id:'photo-id',created_at:'2026-10-01T12:00:00Z',caption:'Fictícia'}],history:[],can_review:manager}};
  const u=ui(t,api,'class-evidence.js');await u.mount('mountClassEvidence');let review=u.root.querySelector('[name=decision]').form;review.dispatchEvent(new u.w.Event('submit',{cancelable:true}));await settle();assert.equal(posted[0].attendance_fingerprint,'snapshot');assert.equal(posted[0].version,7);manager=false;u.root.replaceChildren();await u.mount('mountClassEvidence');assert.equal(u.root.querySelector('[name=decision]'),null);
 });
+
+
+test('Interface da foto: ausência de arquivo mostra erro junto ao formulário, preserva legenda e não envia',async t=>{
+ const sent=[];const api=async(route,p)=>{if(p?.method==='POST')sent.push(p);return {lesson:{cancelled:false},check:{status:'empty',version:0},photos:[],history:[],can_review:false}};
+ const u=ui(t,api,'class-evidence.js');await u.mount('mountClassEvidence');const form=u.root.querySelector('form'),caption=form.querySelector('[name=caption]');caption.value='Legenda preservada';form.dispatchEvent(new u.w.Event('submit',{cancelable:true}));await settle();const feedback=form.querySelector('[role=alert]');assert.ok(feedback);assert.match(feedback.textContent,/Escolha uma foto/);assert.equal(caption.value,'Legenda preservada');assert.equal(sent.length,0);assert.equal(form.querySelector('button').disabled,false);assert.equal(u.w.document.activeElement,feedback);
+});
