@@ -15,11 +15,11 @@ export async function mountCalendar(host,c){
  filter('Situação','calendar_status',state.status,{'':'Todas as situações',...calendarStatuses},v=>state.status=v);
  const tools=el('div',undefined,{class:'calendar-tools'}),refresh=button('Atualizar calendário',load),exportButton=button('Baixar calendário CSV',async()=>download(await api('/appointment-calendar.csv?'+query(),{blob:true}),'calendario-atendimentos.csv'));tools.append(refresh,exportButton);
  host.replaceChildren(title,intro,controls,filters,summary,status,surface,details,record,tools);
- let events=[],groups=new Map(),request=0;
+ let events=[],groups=new Map(),request=0,selection=0;
  function query(){return new URLSearchParams({...period(state.day,state.view),professional:state.professional,unit:state.unit,status:state.status})}
  async function move(n){state.day=state.view==='month'?shiftMonth(state.day,n):addDays(state.day,n*(state.view==='week'?7:1));if(state.day<'2001-01-01')state.day='2001-01-01';if(state.day>'2098-12-31')state.day='2098-12-31';await load()}
  async function load(){
-  const own=++request;host.setAttribute('aria-busy','true');status.textContent='Carregando horários…';surface.replaceChildren();details.replaceChildren();record.hidden=true;summary.replaceChildren();exportButton.disabled=true;
+  const own=++request;++selection;host.setAttribute('aria-busy','true');status.textContent='Carregando horários…';surface.replaceChildren();details.replaceChildren();record.hidden=true;summary.replaceChildren();exportButton.disabled=true;
   try{const result=await api('/appointment-calendar?'+query());if(own!==request||!host.isConnected)return;events=result.events;groups=groupEvents(events);render();status.textContent=events.length+' horários no período exibido. Atualizado às '+hourLabel(result.generated_at)+'.';exportButton.disabled=false}
   catch(error){if(own!==request)return;status.textContent='Não foi possível carregar o calendário. '+error.message;surface.append(button('Tentar carregar novamente',load))}
   finally{if(own===request)host.removeAttribute('aria-busy')}
@@ -32,7 +32,7 @@ export async function mountCalendar(host,c){
   if(state.view==='month')renderMonth(range);else if(state.view==='week')renderWeek(range);
   renderDay(false);
  }
- function selectDay(day){const changed=state.day.slice(0,7)!==day.slice(0,7)&&state.view==='month';state.day=day;jump.value=day;record.hidden=true;if(changed)return load();for(const b of surface.querySelectorAll('[data-day]'))b.setAttribute('aria-pressed',String(b.dataset.day===day));renderDay(true)}
+ function selectDay(day){++selection;const changed=state.day.slice(0,7)!==day.slice(0,7)&&state.view==='month';state.day=day;jump.value=day;record.hidden=true;if(changed)return load();for(const b of surface.querySelectorAll('[data-day]'))b.setAttribute('aria-pressed',String(b.dataset.day===day));renderDay(true)}
  function renderMonth(range){
   const table=el('table',undefined,{class:'calendar-month'}),head=el('thead'),tr=el('tr'),body=el('tbody');table.append(el('caption','Selecione um dia para ver os horários e alunos.'));
   for(const day of ['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'])tr.append(el('th',day,{scope:'col'}));head.append(tr);table.append(head,body);
@@ -43,6 +43,15 @@ export async function mountCalendar(host,c){
   const heading=el('h4',dayLabel(state.day),{tabindex:'-1'}),list=groups.get(state.day)||[];details.replaceChildren(heading);if(!list.length)details.append(el('p','Nenhum horário para este dia com os filtros selecionados.'));
   for(const e of list){const card=el('div',undefined,{class:'calendar-event status-'+e.status}),time=el('div',undefined,{class:'calendar-time'}),text=el('div');time.append(el('strong',hourLabel(e.start_at)),el('span',e.request_id?'Preferência':'até '+hourLabel(e.end_at)));text.append(badge(e),el('h5',e.student_name||'Sem aluno agendado'),el('p',units[e.unit]+' · '+e.professional_name),el('p',labels[e.service]+(e.request_id?'':e.modality==='online'?' · Online':' · Presencial'),{class:'muted'}));const actionButton=button(e.request_id?'Analisar solicitação':e.booking_id?'Ver atendimento':e.status==='free'?'Abrir horário livre':'Ver horário',()=>openEvent(e),{'aria-label':(e.booking_id?'Ver atendimento de '+e.student_name:'Ver horário '+calendarStatuses[e.status])+' às '+hourLabel(e.start_at)});card.append(time,text,actionButton);details.append(card)}if(focus)heading.focus({preventScroll:false});
  }
- async function openEvent(event){if(event.request_id){await onRequest?.(event);return;}record.hidden=false;record.replaceChildren(el('h4',dayLabel(localDay(event.start_at))+' · '+hourLabel(event.start_at)+'–'+hourLabel(event.end_at)),badge(event),el('p',units[event.unit]+' · '+event.professional_name));try{if(event.booking_id)await onBooking(event,record,load);else await onFree(event,record,load)}catch(error){record.append(el('p',error.message,{class:'form-error',role:'alert'}),button('Atualizar calendário',load))}record.focus();record.scrollIntoView({block:'nearest'})}
+ async function openEvent(event){
+  const own=++selection;if(event.request_id){record.hidden=true;await onRequest?.(event);return}
+  // Every selection owns a separate container; a slow previous response stays detached.
+  const content=el('div');record.hidden=false;record.replaceChildren(content);
+  content.append(el('h4',dayLabel(localDay(event.start_at))+' · '+hourLabel(event.start_at)+'–'+hourLabel(event.end_at)),badge(event),el('p',units[event.unit]+' · '+event.professional_name));
+  try{if(event.booking_id)await onBooking(event,content,load);else await onFree(event,content,load)}
+  catch(error){if(own!==selection)return;content.append(el('p',error.message,{class:'form-error',role:'alert'}),button('Atualizar calendário',load))}
+  if(own!==selection||!host.isConnected)return;record.focus();record.scrollIntoView({block:'nearest'});
+ }
+
  await load();return {refresh:load};
 }
