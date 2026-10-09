@@ -1,0 +1,33 @@
+services:
+  - type: web
+    name: luta-pela-comunidade-demo
+    runtime: node
+    plan: starter
+    buildCommand: npm install --ignore-scripts --no-audit --no-fund && npm test
+    startCommand: node server.mjs
+    healthCheckPath: /api/health
+    disk:
+      name: portal-privado
+      mountPath: /var/data
+      sizeGB: 5
+    envVars:
+      - key: PORTAL_DATA_DIR
+        value: /var/data/luta
+      - key: PERSISTENT_STORAGE_CONFIRMED
+        value: "true"
+      - key: PORTAL_SECRET
+        generateValue: true
+      - key: BOOTSTRAP_ADMIN_EMAIL
+        sync: false
+      - key: PUBLIC_ORIGIN
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: MAIL_FROM
+        sync: false
+      - key: PORTAL_INTAKE_ACTIVE
+        value: "false"
+      - key: PORTAL_REGISTRY_ACTIVE
+        value: "false"
+      - key: METRICS_ENABLED
+        value: "false"

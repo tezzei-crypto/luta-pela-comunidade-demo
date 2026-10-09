@@ -4,11 +4,17 @@ Site público e portal privado em HTML, CSS e JavaScript, com Node.js 24 e SQLit
 
 ## Execução e verificação
 
-- Build: npm test
+- Build: npm install --ignore-scripts --no-audit --no-fund && npm test
 - Start: node server.mjs
 - Health check: /api/health
 - Administração: /administracao/
 - Ficha do aluno/responsável: /portal/
+
+## Editor do site
+
+Administração e secretaria acessam `/administracao/#site-editor-area`. O editor oferece textos, imagens, links, títulos e descrições das nove páginas públicas catalogadas, além das perguntas, opções e mensagens do contato pelo WhatsApp. Campos dinâmicos de validação, documentos privados e regras operacionais continuam nos respectivos módulos. Cada página mantém seu próprio rascunho; salvar não publica. Confira a prévia, descreva a alteração e publique. O histórico recupera a versão anterior como rascunho, exigindo nova publicação. Versões concorrentes retornam conflito, sem sobrescrever outra edição.
+
+Imagens autorizadas para divulgação são reprocessadas em WebP sem metadados e armazenadas separadamente dos documentos privados. A biblioteca aceita JPG, PNG e WebP estáticos de até 8 MB e 40 milhões de pixels. Alterar código ou estrutura de uma página pode invalidar seu rascunho anterior; o editor exige reabertura e conferência. Templates públicos são renderizados no servidor para que as edições apareçam antes da execução do JavaScript. Testes utilizam somente dados fictícios.
 
 ## Armazenamento privado no Render
 

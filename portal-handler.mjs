@@ -1,4 +1,5 @@
 import {sameOrigin} from './request-origin.mjs';
+import {handleSiteEditor} from './site-editor-handler.mjs';
 import {handleAttendanceInsights} from './attendance-insights-handler.mjs';
 import {recordDiagnostic} from './diagnostic-http.mjs';
 import {requireRouteAccess} from './portal-permissions.mjs';
@@ -48,6 +49,7 @@ export async function handlePortal(req,env=process.env,injectedStore){
   const role=member.role,actor=user.id,staff=['admin','secretary'].includes(role);
   const requireRole=(...roles)=>{if(!roles.includes(role))fail('Acesso não permitido.',403)};
   requireRouteAccess(role,route,method);
+  const editorResponse=await handleSiteEditor({req,route,method,url,store,actor,requireRole});if(editorResponse)return editorResponse;
   if(route==='/sync'&&method==='GET')return json(await store.systemRevision(actor));
   if(route==='/diagnostics'&&method==='GET'){requireRole('admin');return json(store.diagnosticEvents(actor,{support_id:url.searchParams.get('support_id')||'',kind:url.searchParams.get('kind')||'',page:Number(url.searchParams.get('page')||0)}));}
   if(route==='/diagnostics/settings'&&method==='PATCH'){requireRole('admin');return json({settings:store.configureDiagnostics(actor,await body())});}

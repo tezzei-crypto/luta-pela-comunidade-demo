@@ -1,4 +1,5 @@
 import {systemSync} from './system-sync.mjs';
+import {siteEditor} from './site-editor.mjs';
 import {diagnostics} from './diagnostics.mjs';
 import {contactSettings} from './contact-settings.mjs';
 import {attendanceInsights} from './attendance-insights.mjs';
@@ -87,6 +88,7 @@ export function createSqliteStore(env,{transport=fetch}={}){
   }return rows.length;
  })}
  const api={
+  ...siteEditor({db,get,all,run,tx,requireRole,audit,objectPath}),
   ...diagnostics({db,get,all,run,tx,requireRole,audit}),
   ...contactSettings({db,get,run,tx,requireRole,audit}),...insights,...rollcalls,...staffAccounts({db,get,all,run,tx,requireRole,audit}),...project,...teaching,...professionals,...scheduling,...workforceTools({db,get,all,run,tx,requireRole,audit}),...studentDetails({db,get,all,run,tx,requireRole,audit}),
   async sendAppointmentNotice(id){const n=await scheduling.claimAppointmentNotice(id);if(!n)return;let sent=false;try{if(!env.RESEND_API_KEY||!env.MAIL_FROM)throw Error();const professional=n.email||(n.service==='psychologist'?env.PSYCHOLOGIST_EMAIL:env.SOCIAL_WORKER_EMAIL),to=[...new Set([env.AGENDA_EMAIL||'agenda@lutapelacomunidade.com.br',env.BOOTSTRAP_ADMIN_EMAIL,professional].filter(emailValid))];const response=await transport('https://api.resend.com/emails',{method:'POST',headers:{Authorization:'Bearer '+env.RESEND_API_KEY,'Content-Type':'application/json','Idempotency-Key':'appointment-record-'+id},body:JSON.stringify({from:env.MAIL_FROM,to,subject:'Solicitação registrada na agenda — Luta pela Comunidade',text:'Uma solicitação foi registrada no sistema.\nProtocolo: '+id+'\nConsulte a Agenda no painel protegido para verificar a vaga e confirmar com a família. O recebimento deste aviso não confirma o atendimento.\n'+(env.PUBLIC_ORIGIN||env.RENDER_EXTERNAL_URL||'')+'/administracao/#schedule-area'}),signal:AbortSignal.timeout(15000)});sent=response.ok&&!!(await response.json()).id}catch{}await scheduling.appointmentNoticeResult(id,sent)},
