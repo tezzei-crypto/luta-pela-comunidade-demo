@@ -1,3 +1,4 @@
+import {absencePolicy} from './absence-policy.mjs';
 import {randomUUID} from 'node:crypto';
 import {fail} from './portal-domain.mjs';
 import {localDay} from './professional-tools.mjs';
@@ -10,9 +11,9 @@ export function attendanceDate(v){
  return v;
 }
 // A blank record is unknown, never an absence. Streaks never cross groups.
-export function absenceEpisodes(rows){
+export function absenceEpisodes(rows,threshold=3){
  const episodes=[];let streak=[];
- const finish=()=>{if(streak.length>=3)episodes.push({start:streak[0],last:streak.at(-1),rows:streak});streak=[]};
+ const finish=()=>{if(streak.length>=threshold)episodes.push({start:streak[0],last:streak.at(-1),rows:streak});streak=[]};
  for(const r of rows){if(r.cancelled)continue;if(r.status==='absent')streak.push(r);else finish()}
  finish();return episodes;
 }
@@ -32,6 +33,7 @@ export function attendanceInsights({db,get,all,run,tx,requireRole,scope,audit,en
  updated_at TEXT NOT NULL,PRIMARY KEY(alert_id,recipient_id));
  CREATE INDEX IF NOT EXISTS attendance_alerts_unit ON attendance_alerts(unit,signal,last_day);
  CREATE INDEX IF NOT EXISTS attendance_notices_due ON attendance_notices(status,next_attempt);`);
+ const policy=absencePolicy({db,get,all,run,tx,requireRole,audit,impact:threshold=>({active_before:countActive(policy.readAbsencePolicy().threshold),active_after:countActive(threshold)}),onChange:()=>reconcile()});
  const stamp=()=>new Date().toISOString();
  function allowed(actor){const m=requireRole(actor,ROLES);if(['admin','secretary'].includes(m.role))return scope.units(actor);
   const p=get("SELECT * FROM professional_profiles WHERE user_id=? AND status='verified' AND review_until>=?",actor,localDay());
@@ -56,12 +58,16 @@ export function attendanceInsights({db,get,all,run,tx,requireRole,scope,audit,en
   FROM classes c JOIN attendance a ON a.class_id=c.id JOIN students s ON s.id=a.student_id LEFT JOIN members m ON m.user_id=a.updated_by
   WHERE c.group_id IS NULL AND c.day BETWEEN ? AND ? ORDER BY day,time,class_id,student_id`,from,to,from,to);
  }
+ function countActive(threshold){
+  const pairs=new Map();for(const row of source()){if(!row.group_id||row.cancelled)continue;const key=row.student_id+'|'+row.group_id;if(!pairs.has(key))pairs.set(key,[]);pairs.get(key).push(row)}
+  let count=0;for(const rows of pairs.values()){const last=rows.at(-1);if(!get("SELECT 1 FROM group_students gs JOIN class_groups g ON g.id=gs.group_id JOIN students s ON s.id=gs.student_id WHERE gs.group_id=? AND gs.student_id=? AND g.active=1 AND s.status='approved'",last.group_id,last.student_id))continue;for(const ep of absenceEpisodes(rows,threshold)){if(ep.last!==last)continue;const old=get('SELECT workflow FROM attendance_alerts WHERE student_id=? AND group_id=? AND first_class_id=?',last.student_id,last.group_id,ep.start.class_id);if(old?.workflow!=='closed')count++}}return count;
+ }
  function reconcile(){
   const byPair=new Map(),seen=new Set(),day=localDay();
   for(const r of source()){if(!r.group_id||r.cancelled)continue;const key=r.student_id+'|'+r.group_id;if(!byPair.has(key))byPair.set(key,[]);byPair.get(key).push(r)}
   for(const rows of byPair.values()){
    const latest=rows.at(-1),enrolled=get("SELECT 1 FROM group_students gs JOIN class_groups g ON g.id=gs.group_id JOIN students s ON s.id=gs.student_id WHERE gs.group_id=? AND gs.student_id=? AND g.active=1 AND s.status='approved'",latest.group_id,latest.student_id);
-   for(const e of absenceEpisodes(rows)){
+   for(const e of absenceEpisodes(rows,policy.readAbsencePolicy().threshold)){
     let old=get('SELECT * FROM attendance_alerts WHERE student_id=? AND group_id=? AND first_class_id=?',latest.student_id,latest.group_id,e.start.class_id);
     const following=rows.slice(rows.indexOf(e.last)+1),signal=!enrolled?'inactive':following.some(r=>['present','justified'].includes(r.status))?'returned':following.length?'unconfirmed':'active';
     // Do not notify old episodes already followed by a return at first installation.
@@ -74,6 +80,8 @@ export function attendanceInsights({db,get,all,run,tx,requireRole,scope,audit,en
    }
   }
   for(const old of all("SELECT id,student_id FROM attendance_alerts WHERE signal<>'corrected'"))if(!seen.has(old.id)){run("UPDATE attendance_alerts SET signal='corrected',version=version+1,updated_at=? WHERE id=?",stamp(),old.id);audit('system','attendance.alert.revised:'+old.id,old.student_id)}
+  run("UPDATE attendance_notices SET status='cancelled',updated_at=? WHERE status IN ('pending','retry') AND alert_id IN (SELECT id FROM attendance_alerts WHERE signal<>'active' OR workflow='closed')",stamp());
+  run("UPDATE attendance_notices SET status='pending',updated_at=? WHERE status='cancelled' AND first_attempt=0 AND alert_id IN (SELECT id FROM attendance_alerts WHERE signal='active' AND workflow<>'closed')",stamp());
  }
  function alertRead(actor,id){const a=get('SELECT a.*,s.name,g.label,g.start_time,m.email AS owner_email FROM attendance_alerts a JOIN students s ON s.id=a.student_id JOIN class_groups g ON g.id=a.group_id LEFT JOIN members m ON m.user_id=a.owner_id WHERE a.id=?',id);if(!a||!allowed(actor).includes(a.unit))fail('Alerta indisponível para esta conta.',403);return {...a,evidence:JSON.parse(a.evidence)}}
  function report(actor,p){
@@ -87,10 +95,11 @@ export function attendanceInsights({db,get,all,run,tx,requireRole,scope,audit,en
   const result=[...summary.values()].map(r=>{const marked=r.present+r.absent+r.justified,total=marked+r.unmarked;return {...r,marked,total,frequency:marked?Math.round(1000*r.present/marked)/10:null,completion:total?Math.round(1000*marked/total)/10:null}}).sort((a,b)=>a.unit.localeCompare(b.unit)||a.class.localeCompare(b.class)||a.name.localeCompare(b.name,'pt-BR'));
   const lessons=all('SELECT * FROM classes WHERE day BETWEEN ? AND ? ORDER BY day DESC,time',from,to).filter(matches).map(c=>{const list=records.filter(r=>r.class_id===c.id);return {...c,total:list.length,marked:list.filter(r=>r.status!=='unmarked').length,present:list.filter(r=>r.status==='present').length,absent:list.filter(r=>r.status==='absent').length,justified:list.filter(r=>r.status==='justified').length,unmarked:list.filter(r=>r.status==='unmarked').length}});
   const totals=result.reduce((a,r)=>{for(const k of ['present','absent','justified','unmarked','marked','total'])a[k]+=r[k];return a},{present:0,absent:0,justified:0,unmarked:0,marked:0,total:0});
-  return {generated_at:stamp(),from,to,unit:f.unit,group_id:f.group_id,summary:result,records,lessons,totals:{...totals,students:new Set(result.map(r=>r.student_id)).size,classes:lessons.filter(c=>!c.cancelled).length,frequency:totals.marked?Math.round(1000*totals.present/totals.marked)/10:null}};
+  return {absence_threshold:policy.readAbsencePolicy().threshold,generated_at:stamp(),from,to,unit:f.unit,group_id:f.group_id,summary:result,records,lessons,totals:{...totals,students:new Set(result.map(r=>r.student_id)).size,classes:lessons.filter(c=>!c.cancelled).length,frequency:totals.marked?Math.round(1000*totals.present/totals.marked)/10:null}};
  }
  let delivering=false;
  return {
+  ...policy,
   reconcileAttendanceAlerts:()=>tx(reconcile),attendanceReconcile:reconcile,
   async attendanceReport(actor,p){requireRole(actor,ROLES);tx(reconcile);audit(actor,'attendance.report');return report(actor,p)},
   async attendanceReportOptions(actor){const scope=allowed(actor);return {units:scope,groups:all('SELECT id,unit,label,start_time,active FROM class_groups ORDER BY unit,start_time,label').filter(g=>scope.includes(g.unit))}},
@@ -110,7 +119,7 @@ export function attendanceInsights({db,get,all,run,tx,requireRole,scope,audit,en
     for(const n of due){const r=recipients(n.unit).find(r=>r.user_id===n.recipient_id);if(!r||n.signal!=='active'||n.workflow==='closed'){run("UPDATE attendance_notices SET status='cancelled',updated_at=? WHERE alert_id=? AND recipient_id=?",stamp(),n.alert_id,n.recipient_id);continue}
      const now=Date.now();if(n.first_attempt&&now-n.first_attempt>=23*3600000||n.attempts>=8){run("UPDATE attendance_notices SET status='review',updated_at=? WHERE alert_id=? AND recipient_id=?",stamp(),n.alert_id,n.recipient_id);continue}
      run('UPDATE attendance_notices SET attempts=attempts+1,first_attempt=CASE WHEN first_attempt=0 THEN ? ELSE first_attempt END,next_attempt=?,updated_at=? WHERE alert_id=? AND recipient_id=?',now,now+300000,stamp(),n.alert_id,n.recipient_id);
-     let provider='';try{const response=await transport('https://api.resend.com/emails',{method:'POST',headers:{Authorization:'Bearer '+env.RESEND_API_KEY,'Content-Type':'application/json','Idempotency-Key':'attendance-'+n.alert_id+'-'+r.user_id},body:JSON.stringify({from:env.MAIL_FROM,to:[r.email],subject:'Frequência: acompanhamento de três faltas — Luta pela Comunidade',text:'Há um novo alerta de três faltas consecutivas sem justificativa em um núcleo sob sua responsabilidade.\nEntre no painel privado para consultar o aluno, conferir os lançamentos e combinar o contato acolhedor com a família.\n'+(env.PUBLIC_ORIGIN||env.RENDER_EXTERNAL_URL)+'/portal/#attendance-report-area\n\nA justificativa interrompe a sequência. Registros sem marcação não contam como falta. Este aviso não substitui o acompanhamento da equipe.'}),signal:AbortSignal.timeout(10000)});if(response.ok)provider=(await response.json()).id||''}catch{}
+     let provider='';try{const response=await transport('https://api.resend.com/emails',{method:'POST',headers:{Authorization:'Bearer '+env.RESEND_API_KEY,'Content-Type':'application/json','Idempotency-Key':'attendance-'+n.alert_id+'-'+r.user_id},body:JSON.stringify({from:env.MAIL_FROM,to:[r.email],subject:'Frequência: acompanhamento de faltas — Luta pela Comunidade',text:'Há um alerta de '+policy.readAbsencePolicy().threshold+' ou mais faltas consecutivas sem justificativa em um núcleo sob sua responsabilidade.\nEntre no painel privado para consultar o aluno, conferir os lançamentos e combinar o contato acolhedor com a família.\n'+(env.PUBLIC_ORIGIN||env.RENDER_EXTERNAL_URL)+'/portal/#attendance-report-area\n\nA justificativa interrompe a sequência. Registros sem marcação não contam como falta. Este aviso não substitui o acompanhamento da equipe.'}),signal:AbortSignal.timeout(10000)});if(response.ok)provider=(await response.json()).id||''}catch{}
      run('UPDATE attendance_notices SET status=?,provider_id=?,next_attempt=?,updated_at=? WHERE alert_id=? AND recipient_id=?',provider?'accepted':'retry',provider,now+Math.min(3600000,300000*2**n.attempts),stamp(),n.alert_id,n.recipient_id);
     }
    }finally{delivering=false}

@@ -1,3 +1,4 @@
+import {classEvidence} from './class-evidence.mjs';
 import {unitScope,scopedSecretaryStore} from './unit-scope.mjs';
 import {appointmentNotices} from './appointment-notices.mjs';
 import {systemSync} from './system-sync.mjs';
@@ -66,6 +67,7 @@ export function createSqliteStore(env,{transport=fetch}={}){
  const teaching=teacherTools({db,get,all,run,tx,requireRole,scope,audit});
  let insights,rollcalls;
  const project=projectTools({db,get,all,run,tx,requireRole,scope,audit,requireUnit:teaching.requireUnit,onAttendanceChanged:()=>{insights?.attendanceReconcile();rollcalls?.rollcallReconcile()}});
+ const evidence=classEvidence({db,get,all,run,tx,requireRole,audit,objectPath,lessonAccess:project.lessonAccess});
  const professionals=professionalTools({db,get,all,run,tx,requireRole,scope,audit});
  const scheduling=schedulingTools({db,get,all,run,tx,requireRole,scope,audit,...professionals});
  const agendaNotices=appointmentNotices({db,get,all,run,tx,audit,env,transport,professionalApproved:professionals.professionalApproved});
@@ -94,7 +96,7 @@ export function createSqliteStore(env,{transport=fetch}={}){
  const api={
   ...siteEditor({db,get,all,run,tx,requireRole,scope,audit,objectPath}),
   ...diagnostics({db,get,all,run,tx,requireRole,scope,audit}),
-  ...contactSettings({db,get,run,tx,requireRole,audit}),...insights,...rollcalls,...staffAccounts({db,get,all,run,tx,requireRole,scope,audit}),...project,...teaching,...professionals,...scheduling,...workforceTools({db,get,all,run,tx,requireRole,scope,audit}),...studentDetails({db,get,all,run,tx,requireRole,scope,audit}),
+  ...contactSettings({db,get,run,tx,requireRole,audit}),...insights,...rollcalls,...staffAccounts({db,get,all,run,tx,requireRole,scope,audit}),...project,...evidence,...teaching,...professionals,...scheduling,...workforceTools({db,get,all,run,tx,requireRole,scope,audit}),...studentDetails({db,get,all,run,tx,requireRole,scope,audit}),
   ...agendaNotices,
   async sendBookingNotice(actor,id){await scheduling.booking(actor,id);await agendaNotices.sendPrivateNotice(id)},
   close:()=>db.close(),

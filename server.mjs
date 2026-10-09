@@ -42,7 +42,7 @@ async function serveRequest(req,res){
   limits.set(key,entry&&now-entry.start<600000?{...entry,count:entry.count+1}:{start:now,count:1});
   const chunks=[];let size=0;
   try{
-   for await(const chunk of req){size+=chunk.length;if(size>(url.pathname==='/api/portal/site-editor/media'?9*1024*1024:url.pathname.endsWith('/documents')?6*1024*1024:2*1024*1024)){res.writeHead(413,{'Content-Type':'application/json','Cache-Control':'no-store'}).end(JSON.stringify({message:'Envio acima do limite permitido.'}));return}chunks.push(chunk)}
+   for await(const chunk of req){size+=chunk.length;if(size>((url.pathname==='/api/portal/site-editor/media'||/^\/api\/portal\/classes\/[a-f0-9-]{36}\/photos$/i.test(url.pathname))?9*1024*1024:url.pathname.endsWith('/documents')?6*1024*1024:2*1024*1024)){res.writeHead(413,{'Content-Type':'application/json','Cache-Control':'no-store'}).end(JSON.stringify({message:'Envio acima do limite permitido.'}));return}chunks.push(chunk)}
    await send(await handlePortal(new Request(url,{method:req.method,headers:req.headers,...(!['GET','HEAD'].includes(req.method)?{body:Buffer.concat(chunks)}:{})}),process.env));
   }catch{await send(Response.json({message:'Não foi possível concluir a operação.'},{status:500,headers:{'Cache-Control':'no-store'}}))}return;
  }

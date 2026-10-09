@@ -8,6 +8,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {createSqliteStore} from './portal-sqlite.mjs';
 import {handlePortal} from './portal-handler.mjs';
 import {ADMIN_UNITS} from './unit-scope.mjs';
+import sharp from 'sharp';
 const day=new Date(Date.now()+3*86400000).toISOString().slice(0,10);
 const account=(email,units,extra={})=>({name:'Secretaria Fictícia',email,phone:'24999999999',role:'secretary',active:true,version:0,units,...extra});
 async function fixture(t){
@@ -106,4 +107,27 @@ test('Núcleos: lembretes e alertas não incluem secretarias de outras unidades 
  const recipients=await f.store.attendanceRecipients(f.admin.user_id);for(const r of recipients)assert.equal(r.roles.find(x=>x.role==='secretary').count,1);
  const sec=f.secretaries[0];await f.store.saveStaffAccount(f.admin.user_id,sec.user_id,{...sec,units:['valparaiso']});await f.store.checkRollcalls(clock);
  assert.equal(f.db.prepare("SELECT count(*) AS n FROM rollcall_notices n JOIN rollcall_issues i ON i.id=n.issue_id WHERE i.unit='amavale' AND n.recipient_id=? AND n.status IN ('pending','retry','sending')").get(sec.user_id).n,0);
+});
+
+test('Núcleos: fotos privadas, revisão e política de faltas respeitam escopo após integração',async t=>{
+ const f=await fixture(t),bytes=await sharp({create:{width:8,height:8,channels:3,background:'#f4c'}}).png().toBuffer();
+ const uploaded=[];
+ for(let b=0;b<3;b++)uploaded.push(await f.store.addClassPhoto(f.admin.user_id,f.classes[b].id,bytes,{request_id:randomUUID(),caption:'Foto fictícia',version:0,mime:'image/png'}));
+ for(let a=0;a<3;a++)for(let b=0;b<3;b++){
+  const sec=f.secretaries[a],base='/classes/'+f.classes[b].id+'/photos',expected=a===b?200:403;
+  assert.equal((await f.req(sec,base)).status,expected);
+  assert.equal((await f.req(sec,base+'/'+uploaded[b].id)).status,expected);
+  const proof=await f.store.classEvidence(f.admin.user_id,f.classes[b].id);
+  const review=await f.req(sec,base+'/'+uploaded[b].id+'/review','POST',{decision:'approved',note:'Conferência fictícia',version:proof.check.version,attendance_fingerprint:proof.check.attendance_fingerprint});
+  assert.equal(review.status,expected);
+  if(a!==b)await assert.rejects(f.store.forActor(sec.user_id).addClassPhoto(sec.user_id,f.classes[b].id,bytes,{request_id:randomUUID(),caption:'',version:proof.check.version,mime:'image/png'}),{status:403});
+ }
+ const sec=f.secretaries[0],settings=await (await f.req(sec,'/attendance-alerts/settings')).json();
+ assert.equal(settings.settings.threshold,3);assert.equal(settings.settings.can_edit,false);assert.deepEqual(settings.settings.history,[]);
+ assert.equal((await f.req(sec,'/attendance-alerts')).status,200);
+ for(const [route,method]of [['/attendance-alerts/settings','PATCH'],['/attendance-alerts/settings/preview','POST']])assert.equal((await f.req(sec,route,method,{threshold:1,version:1})).status,403);
+ const proof=await f.store.classEvidence(f.admin.user_id,f.classes[0].id);
+ assert.equal(proof.check.status,'approved');
+ const cached=f.store.forActor(sec.user_id);await f.store.saveStaffAccount(f.admin.user_id,sec.user_id,{...sec,units:['valparaiso']});
+ await assert.rejects(cached.classPhoto(sec.user_id,f.classes[0].id,uploaded[0].id),{status:403});
 });

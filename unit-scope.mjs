@@ -48,7 +48,7 @@ export function scopedSecretaryStore(api,actor,{scope,get,all}) {
  };
  const rules={};
  const allow=(names,check=()=>{})=>{for(const n of names.split(' '))rules[n]=async(...args)=>{check(...args);return api[n](...args)}};
- allow('systemRevision audit rollcallSettings attendanceReport attendanceReportOptions attendanceAlerts attendanceAlert attendanceFollowup attendanceRecipients rollcallIssues');
+ allow('systemRevision audit rollcallSettings absencePolicy attendanceReport attendanceReportOptions attendanceAlerts attendanceAlert attendanceFollowup attendanceRecipients rollcallIssues');
  allow('links',id=>{if(id!==actor)deny()});
  allow('member',id=>{if(id!==actor)deny()});
  rules.availableUnits=async()=>scope.units(actor);
@@ -67,7 +67,7 @@ export function scopedSecretaryStore(api,actor,{scope,get,all}) {
  allow('group',(_,id)=>record('class_groups',id));
  allow('saveGroup',(_,id,p)=>{unit(p.unit);if(id)record('class_groups',id)});
  allow('createClass createWorkforceSession',(_,p)=>{if(p.group_id)record('class_groups',p.group_id);else unit(p.unit)});
- allow('attendance markAttendance cancelClass',(_,id)=>record('classes',id));
+ allow('classEvidence addClassPhoto classPhoto reviewClassPhoto attendance markAttendance cancelClass',(_,id)=>record('classes',id));
  allow('workforceAttendance markWorkforceAttendance workforceHistory',(_,id)=>record('workforce_sessions',id));
  allow('report updateReport',(_,id)=>record('reports',id));
  allow('createReport',(_,p)=>unit(p.unit));

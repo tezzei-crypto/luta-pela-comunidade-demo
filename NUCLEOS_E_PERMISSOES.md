@@ -57,10 +57,17 @@ levantar as contas reais, obter da gestão seus núcleos e preparar a atribuiç�
 Uma conta sem núcleo não acessa registros locais. Administradores continuam globais.
 Esta regra é intencional: não inferir o núcleo pelo email, nome ou último acesso.
 
-A preparação desta alteração identificou uma conta de secretaria já existente.
-A publicação deve aguardar a definição do seu escopo, para evitar interromper a
-operação. Não migrar dados de teste para produção. A base SQLite e os documentos
-persistentes permanecem no Render.
+A preparação identificou uma conta de secretaria já existente. A gestão definiu
+explicitamente acesso aos três núcleos em 09/10/2026. Na implantação, cadastrar
+essa seleção na conta existente e conferir a persistência, preservando nome,
+contato e função. Não criar contas reais fictícias para testar isolamento.
+A base SQLite e os documentos persistentes permanecem no Render.
+
+A integração inclui os recursos publicados de fotos e limite de faltas. Fotos,
+envios e revisões respeitam o núcleo da aula; secretarias consultam a regra global
+de faltas sem alterar a configuração nem ver seu histórico administrativo.
+Os avisos continuam incluindo todos os administradores ativos, a secretaria dos
+núcleos correspondentes e os professores habilitados vinculados à turma.
 
 ## Evidência e limites
 
@@ -77,3 +84,8 @@ introduz subcontas externas. Não houve consulta a especialistas humanos.
 Os testes automatizados usam dados fictícios e armazenamento isolado. JSDOM
 verifica comportamento do formulário e da agenda, mas não substitui a conferência
 visual em navegadores reais. Suíte aprovada não significa ausência de defeitos.
+
+Validação da integração em 09/10/2026: 254 testes aprovados, incluindo matriz 3×3
+de leitura e alteração, documentos privados, agenda entre núcleos, fotos privadas,
+revisão, revogação e política global de faltas. Publicação e conferência real devem
+ser registradas separadamente; este documento não declara essas etapas concluídas.
