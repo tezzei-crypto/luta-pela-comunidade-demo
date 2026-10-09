@@ -1,3 +1,4 @@
+import {classEvidence} from './class-evidence.mjs';
 import {appointmentNotices} from './appointment-notices.mjs';
 import {systemSync} from './system-sync.mjs';
 import {siteEditor} from './site-editor.mjs';
@@ -64,6 +65,7 @@ export function createSqliteStore(env,{transport=fetch}={}){
  const teaching=teacherTools({db,get,all,run,tx,requireRole,audit});
  let insights,rollcalls;
  const project=projectTools({db,get,all,run,tx,requireRole,audit,requireUnit:teaching.requireUnit,onAttendanceChanged:()=>{insights?.attendanceReconcile();rollcalls?.rollcallReconcile()}});
+ const evidence=classEvidence({db,get,all,run,tx,requireRole,audit,objectPath,lessonAccess:project.lessonAccess});
  const professionals=professionalTools({db,get,all,run,tx,requireRole,audit});
  const scheduling=schedulingTools({db,get,all,run,tx,requireRole,audit,...professionals});
  const agendaNotices=appointmentNotices({db,get,all,run,tx,audit,env,transport,professionalApproved:professionals.professionalApproved});
@@ -92,7 +94,7 @@ export function createSqliteStore(env,{transport=fetch}={}){
  const api={
   ...siteEditor({db,get,all,run,tx,requireRole,audit,objectPath}),
   ...diagnostics({db,get,all,run,tx,requireRole,audit}),
-  ...contactSettings({db,get,run,tx,requireRole,audit}),...insights,...rollcalls,...staffAccounts({db,get,all,run,tx,requireRole,audit}),...project,...teaching,...professionals,...scheduling,...workforceTools({db,get,all,run,tx,requireRole,audit}),...studentDetails({db,get,all,run,tx,requireRole,audit}),
+  ...contactSettings({db,get,run,tx,requireRole,audit}),...insights,...rollcalls,...staffAccounts({db,get,all,run,tx,requireRole,audit}),...project,...evidence,...teaching,...professionals,...scheduling,...workforceTools({db,get,all,run,tx,requireRole,audit}),...studentDetails({db,get,all,run,tx,requireRole,audit}),
   ...agendaNotices,
   async sendBookingNotice(actor,id){await scheduling.booking(actor,id);await agendaNotices.sendPrivateNotice(id)},
   close:()=>db.close(),
