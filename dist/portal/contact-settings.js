@@ -10,7 +10,7 @@ async function loadContactSettings(){
  form.addEventListener('submit',action(async()=>{const p=await api('/contact-settings',{method:'PATCH',data:{phone:phone.value,enabled:enabled.value==='true',version:settings.version}});await loadContactSettings();$('contact-settings-form').prepend(el('p',p.message,{role:'status',class:'form-success'}));notice(p.message)}));
 }
 document.addEventListener('portal:loaded',()=>{
- if(!['admin','secretary'].includes(me.role))return;
+ if(me.role!=='admin')return;
  if(!$('contact-settings-area')){const box=el('section',undefined,{id:'contact-settings-area'});box.append(el('h2','Contato da secretaria'),el('p','Administradores gerais e secretaria podem manter o canal de atendimento atualizado.'),el('a','Ver a página de atendimento ↗',{href:'/contato/',target:'_blank',rel:'noopener noreferrer'}),el('button','Recarregar contato',{type:'button',id:'contact-settings-reload',class:'secondary'}),el('div',undefined,{id:'contact-settings-form'}));$('workspace').append(box);$('contact-settings-reload').addEventListener('click',action(loadContactSettings))}
  action(loadContactSettings)();
 });
