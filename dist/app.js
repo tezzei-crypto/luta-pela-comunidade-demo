@@ -6,7 +6,7 @@ document.addEventListener('click',e=>{if(!e.target.closest('.units'))closeUnits(
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!menu.hidden){closeUnits();toggle.focus()}});
 const units=[{slug:'amavale',name:'Amavale',number:'01',description:'A parceria com a AMAVALE prevê a utilização da arena quatro vezes por semana para aulas infantis e juvenis, com proposta de atendimento a 80 crianças. As atividades contemplam jiu-jítsu com e sem kimono. A distribuição das turmas e os horários devem ser consultados com a coordenação.'},{slug:'valparaiso',name:'Valparaíso',number:'02',description:'O Ginásio Poliesportivo do Valparaíso integra a proposta de implantação de uma sede para o projeto em Petrópolis. A iniciativa busca ampliar as condições de atendimento e favorecer a aproximação com as famílias e a comunidade.'},{slug:'vale-do-carangola',name:'Vale do Carangola',number:'03',description:'Vale do Carangola é um dos três núcleos previstos para o projeto em Petrópolis. As informações de local, organização das turmas e horários serão atualizadas após confirmação da coordenação.'}];
 const current=units.find(u=>location.pathname.split('/').includes(u.slug));
-if(current){
+if(current&&!document.documentElement.hasAttribute('data-site-rendered')){
  document.title=`${current.name} — Luta pela Comunidade`;
  document.querySelector('meta[name=description]').content=`Conheça o núcleo ${current.name} do Luta pela Comunidade, projeto de jiu-jitsu gratuito da FJJE-Rio em Petrópolis.`;
  document.querySelector(`.unit-menu a[href="/unidades/${current.slug}/"]`).setAttribute('aria-current','page');
@@ -14,7 +14,7 @@ if(current){
 }
 
 
-if(current?.slug==='amavale'){
+if(current?.slug==='amavale'&&!document.documentElement.hasAttribute('data-site-rendered')){
  document.querySelector('.detail-hero .lead').textContent='Jiu-jitsu gratuito para crianças e adolescentes na Arena Amavale, em Vale das Videiras, Petrópolis.';
  document.querySelector('.detail-grid>div').innerHTML=`<p class="eyebrow red">NÚCLEO AMAVALE</p><h2>Uma turma, muitas possibilidades.</h2><p>A Arena Amavale recebe as aulas do Luta pela Comunidade. Aqui, crianças e adolescentes praticam jiu-jitsu, convivem e aprendem com a orientação da equipe do projeto.</p><h3>Dias e horários das aulas</h3><p><strong>Terças e quintas-feiras</strong></p><ul class="detail-list"><li><strong>Adolescentes, de 11 a 17 anos:</strong> das 15h às 16h.</li><li><strong>Infantil, de 5 a 10 anos:</strong> das 16h25 às 17h.</li></ul><p>Para informações sobre inscrição e vagas, fale com a secretaria.</p><a class="button" href="/contato/">Falar com a secretaria</a>`;
  document.querySelector('.info-box').innerHTML=`<h3>Como chegar</h3><p><strong>Arena Amavale</strong></p><address>Estrada Almirante Paulo Meira, 8585<br>Vale das Videiras — Petrópolis/RJ<br>CEP 25725-029</address><p><a class="text-link" href="https://www.google.com/maps/search/?api=1&query=Arena%20Amavale%20Estrada%20Almirante%20Paulo%20Meira%208585%20Petropolis%20RJ" target="_blank" rel="noopener noreferrer">Abrir endereço no mapa ↗</a></p><p>Horários de Brasília. Confirme alterações e disponibilidade de vagas com a secretaria.</p>`;
