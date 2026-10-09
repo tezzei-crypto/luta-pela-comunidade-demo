@@ -15,13 +15,31 @@ export const diagnosticKinds={
  unavailable:['Serviço indisponível','Tente novamente mais tarde. A equipe deve conferir o serviço.'],
  server:['Falha de processamento','A equipe deve verificar o serviço usando o código de atendimento.'],
  storage:['Falha no armazenamento','A equipe deve verificar o banco e o espaço do disco privado.'],
- email:['Aviso por email não confirmado','Confira o provedor de email. A inscrição pode estar salva no painel.'],
- disconnected:['Conexão interrompida','A confirmação não chegou ao navegador. Confira o registro antes de iniciar outra inscrição.'],
+ email:['Aviso por email não confirmado','O envio do aviso não foi confirmado. Confira o provedor e o registro da operação no painel.'],
+ disconnected:['Conexão interrompida','A resposta não chegou completa ao navegador. Confira o registro antes de repetir um envio.'],
  offline:['Navegador sem conexão','Reconecte o aparelho e tente novamente sem apagar os campos.'],
  network:['Falha de conexão relatada','O navegador não conseguiu obter a resposta. A causa exata não foi confirmada.'],
  timeout:['Tempo de resposta excedido','O navegador aguardou sem confirmação. Confira o registro antes de iniciar outro envio.'],
- unexpected_response:['Resposta inesperada','A resposta recebida não tinha o formato esperado. Não é possível afirmar que a inscrição foi salva.']
+ unexpected_response:['Resposta inesperada','A resposta recebida não tinha o formato esperado. O resultado da operação precisa ser conferido.']
 };
+// Explain only observed evidence. A browser report cannot establish whether a write committed.
+export function diagnosticGuidance(event){
+ const kind=Object.hasOwn(diagnosticKinds,event.kind)?event.kind:'server';
+ let guidance=diagnosticKinds[kind][1];
+ if(kind==='unexpected_response'&&[502,503,504].includes(event.status))guidance=`O navegador recebeu HTTP ${event.status}, sem uma resposta válida do sistema. A equipe deve verificar a disponibilidade do serviço; o registro não determina a causa da falha.`;
+ if(['unexpected_response','disconnected','timeout','email'].includes(kind)){
+  const next={
+   registration:'Confira a lista de candidatos e o protocolo antes de repetir a inscrição.',
+   appointment:'Confira as solicitações e o calendário pelo protocolo antes de repetir o pedido. O envio não confirma o atendimento.',
+   portal:'Se estava consultando, atualize a tela. Se estava salvando, confira o registro antes de repetir o envio.',
+   login:'Confira a mensagem de acesso e tente entrar novamente. Nunca informe senha ou código de login no relato de erro.',
+   sponsorship:'Confira com a equipe o protocolo antes de repetir a proposta.',
+   site:'Atualize a página. Se estava enviando dados, confira o resultado antes de reenviar.'
+  };
+  guidance+=' '+(next[event.operation]||next.site);
+ }
+ return guidance;
+}
 export function kindForStatus(status){return status===413?'too_large':status===429?'rate_limit':status===409?'conflict':[401,403].includes(status)?'access':[400,404,405,415,422].includes(status)?'validation':[502,503,504].includes(status)?'unavailable':'server'}
 export function causeFor(error){return ['ENOSPC','EACCES','EROFS'].includes(error?.code)||String(error?.code||'').startsWith('ERR_SQLITE')?'storage':error?.name==='AbortError'||error?.name==='TimeoutError'?'timeout':'server'}
 export function sanitizeDiagnostic(raw,now=Date.now()){
@@ -39,7 +57,7 @@ export function diagnostics({db,get,all,run,tx,requireRole,audit}){
  prune();
  return {
   recordDiagnostic(raw){const e=sanitizeDiagnostic(raw);run('INSERT INTO diagnostic_events(support_id,created_at,source,operation,kind,status,duration_ms,release) VALUES(?,?,?,?,?,?,?,?)',...Object.values(e));prune();return e.support_id},
-  diagnosticEvents(actor,{support_id='',kind='',page=0}={}){requireRole(actor,['admin']);if(support_id&&!UUID.test(support_id)||kind&&!Object.hasOwn(diagnosticKinds,kind)||!Number.isInteger(page)||page<0||page>200)fail('Filtro inválido.');prune();const where=[],values=[];if(support_id){where.push('support_id=?');values.push(support_id.toLowerCase())}if(kind){where.push('kind=?');values.push(kind)}const rows=all('SELECT * FROM diagnostic_events'+(where.length?' WHERE '+where.join(' AND '):'')+' ORDER BY id DESC LIMIT 51 OFFSET ?',...values,page*50);return {events:rows.slice(0,50).map(e=>({...e,title:diagnosticKinds[e.kind][0],guidance:diagnosticKinds[e.kind][1]})),has_more:rows.length>50,page,settings:settings(),kinds:diagnosticKinds}},
+  diagnosticEvents(actor,{support_id='',kind='',page=0}={}){requireRole(actor,['admin']);if(support_id&&!UUID.test(support_id)||kind&&!Object.hasOwn(diagnosticKinds,kind)||!Number.isInteger(page)||page<0||page>200)fail('Filtro inválido.');prune();const where=[],values=[];if(support_id){where.push('support_id=?');values.push(support_id.toLowerCase())}if(kind){where.push('kind=?');values.push(kind)}const rows=all('SELECT * FROM diagnostic_events'+(where.length?' WHERE '+where.join(' AND '):'')+' ORDER BY id DESC LIMIT 51 OFFSET ?',...values,page*50);return {events:rows.slice(0,50).map(e=>({...e,title:diagnosticKinds[e.kind][0],guidance:diagnosticGuidance(e)})),has_more:rows.length>50,page,settings:settings(),kinds:diagnosticKinds}},
   configureDiagnostics(actor,data){requireRole(actor,['admin']);const days=Number(data.retention_days);if(![7,30,90].includes(days))fail('Escolha 7, 30 ou 90 dias.');return tx(()=>{if(data.version!==settings().version)fail('Configuração alterada. Atualize o painel.',409);run('UPDATE diagnostic_settings SET retention_days=?,version=version+1 WHERE id=1',days);prune();audit(actor,'diagnostics.retention:'+days);return settings()})}
  };
 }

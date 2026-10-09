@@ -8,7 +8,7 @@ import {spawn} from 'node:child_process';
 import {createSqliteStore} from './portal-sqlite.mjs';
 import {handlePortal} from './portal-handler.mjs';
 import {handleRegistration} from './registration-handler.mjs';
-import {sanitizeDiagnostic} from './diagnostics.mjs';
+import {sanitizeDiagnostic,diagnosticGuidance} from './diagnostics.mjs';
 import {createRequestFeedback} from './dist/request-feedback.js';
 
 async function fixture(t){
@@ -29,6 +29,26 @@ function registrationForm(id=randomUUID()){
 test('Diagnóstico: mantém só metadados permitidos e rejeita conteúdo sensível',()=>{
  const e=sanitizeDiagnostic({support_id:'email@example.com\nInjected',operation:'/api/students/private-name',kind:'secret',status:999,headers:{Authorization:'Bearer PRIVATE'},password:'PRIVATE',body:'PRIVATE',stack:'PRIVATE',release:'PRIVATE'});
  assert.equal(e.operation,'site');assert.equal(e.kind,'server');assert.equal(e.status,0);assert.doesNotMatch(JSON.stringify(e),/PRIVATE|email@example|Injected|private-name/);
+});
+test('Diagnóstico: resposta inesperada orienta a operação correta sem inventar causa ou gravação',()=>{
+ for(const status of [502,503,504]){
+  const message=diagnosticGuidance({kind:'unexpected_response',operation:'portal',status});
+  assert.match(message,new RegExp('HTTP '+status));assert.match(message,/Se estava consultando/);assert.match(message,/Se estava salvando/);
+  assert.match(message,/não determina a causa/);assert.doesNotMatch(message,/inscrição|candidatos/);
+ }
+ const registration=diagnosticGuidance({kind:'unexpected_response',operation:'registration',status:200});
+ assert.match(registration,/candidatos e o protocolo/);assert.doesNotMatch(registration,/foi salva|foi perdida|HTTP 502/);
+ const appointment=diagnosticGuidance({kind:'timeout',operation:'appointment',status:0});
+ assert.match(appointment,/solicitações e o calendário/);assert.match(appointment,/não confirma o atendimento/);
+ assert.doesNotMatch(diagnosticGuidance({kind:'email',operation:'portal'}),/inscrição/);
+ assert.doesNotMatch(diagnosticGuidance({kind:'unexpected_response',operation:'portal',status:200}),/HTTP 502|disponibilidade/);
+});
+test('Diagnóstico: orientação atualizada se aplica aos eventos antigos sem alterar metadados',async t=>{
+ const f=await fixture(t),id=randomUUID();
+ f.store.recordDiagnostic({support_id:id,operation:'portal',kind:'unexpected_response',source:'browser',status:502});
+ const {events}=await(await f.request('/diagnostics?support_id='+id)).json();
+ assert.equal(events.length,1);assert.equal(events[0].kind,'unexpected_response');assert.equal(events[0].source,'browser');assert.equal(events[0].status,502);
+ assert.match(events[0].guidance,/HTTP 502/);assert.doesNotMatch(events[0].guidance,/inscrição/);
 });
 test('Diagnóstico: consulta exclusiva do administrador, filtros, versão e retenção',async t=>{
  const f=await fixture(t),id=randomUUID();f.store.recordDiagnostic({support_id:id,operation:'registration',kind:'network',source:'browser'});
