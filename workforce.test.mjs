@@ -7,10 +7,10 @@ import {randomUUID} from 'node:crypto';
 import {createSqliteStore} from './portal-sqlite.mjs';
 import {handlePortal} from './portal-handler.mjs';
 import {csv,parseCsv} from './portal-domain.mjs';
-const staffData=(email,role='secretary')=>({email,role,name:'Pessoa Fictícia da Equipe',phone:'24999999999',active:true,version:0});
+const staffData=(email,role='secretary')=>({email,role,name:'Pessoa Fictícia da Equipe',phone:'24999999999',active:true,version:0,units:['amavale']});
 async function fixture(t){
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'lpc-workforce-test-')),mail=[],env={PORTAL_DATA_DIR:dir,PORTAL_SECRET:'test-only-'.repeat(5),BOOTSTRAP_ADMIN_EMAIL:'admin@example.test',RESEND_API_KEY:'synthetic',MAIL_FROM:'test@example.test',PUBLIC_ORIGIN:'https://test.example'};
- let store=createSqliteStore(env,{transport:async(_url,o)=>{mail.push(JSON.parse(o.body));return Response.json({id:'fake'})}});const admin=(await store.members())[0],sec=await store.provision('secretary@example.test','secretary'),guardian=await store.provision('guardian@example.test','guardian');
+ let store=createSqliteStore(env,{transport:async(_url,o)=>{mail.push(JSON.parse(o.body));return Response.json({id:'fake'})}});const admin=(await store.members())[0],sec=await store.provision('secretary@example.test','secretary'),guardian=await store.provision('guardian@example.test','guardian');await store.saveStaffAccount(admin.user_id,sec.user_id,{name:'Secretaria Fictícia',email:sec.email,phone:'24999999999',role:'secretary',active:true,version:0,units:['amavale','valparaiso','vale-do-carangola']});
  t.after(()=>{store.close();if(dir.startsWith(path.join(os.tmpdir(),'lpc-workforce-test-')))fs.rmSync(dir,{recursive:true,force:true})});
  const login=async email=>{await store.requestCode(email);return (await store.verifyCode(email,mail.at(-1).text.match(/\b\d{8}\b/)[0])).access_token};
  const request=async(token,route,method='GET',data)=>handlePortal(new Request(env.PUBLIC_ORIGIN+'/api/portal'+route,{method,headers:{Origin:env.PUBLIC_ORIGIN,Authorization:'Bearer '+token,...(data?{'Content-Type':'application/json'}:{})},...(data?{body:JSON.stringify(data)}:{})}),env,store);
@@ -34,9 +34,10 @@ test('Psicologia e assistência: relatos do núcleo e agenda própria, sem prese
  for(const person of [p,s]){const token=await f.login(person.email);assert.equal((await f.request(token,'/reports/'+report.id)).status,200);assert.equal((await f.request(token,'/reports?unit=valparaiso')).status,403);assert.equal((await f.request(token,'/unit-roster?unit=valparaiso')).status,403);assert.equal((await f.request(token,'/classes?unit=amavale')).status,403);assert.equal((await f.request(token,'/attendance.csv?unit=amavale')).status,403);assert.equal((await f.request(token,'/slots?professional='+other.user_id)).status,403);assert.equal((await f.request(token,'/bookings')).status,200);
  const day=new Date(Date.now()+86400000*10).toISOString().slice(0,10);assert.equal((await f.request(token,'/slots','POST',{professional_id:person.user_id,unit:'amavale',day,start_time:'10:00',end_time:'11:00'})).status,201);assert.equal((await f.request(token,'/slots','POST',{professional_id:other.user_id,unit:'valparaiso',day,start_time:'10:00',end_time:'11:00'})).status,403);assert.equal((await f.request(token,'/reports/'+report.id,'POST',{version:1,note:'Tentativa de encerramento',status:'closed'})).status,403)}
 });
-test('Secretaria: gestão completa de perfis, importação, métricas e histórico',async t=>{
+test('Secretaria: gestão dos perfis e importação nos núcleos atribuídos; controles globais bloqueados',async t=>{
  const f=await fixture(t),p=await f.care('psychologist','psych@example.test'),token=await f.login(f.sec.email);
- for(const route of ['/teachers','/teachers/'+f.teacher.user_id,'/professionals/'+p.user_id,'/monitors','/audit','/dashboard','/members','/students','/registrations'])assert.equal((await f.request(token,route)).status,200,route);
+ for(const route of ['/teachers','/teachers/'+f.teacher.user_id,'/professionals/'+p.user_id,'/monitors','/dashboard','/students','/registrations'])assert.equal((await f.request(token,route)).status,200,route);
+ for(const route of ['/audit','/members'])assert.equal((await f.request(token,route)).status,403);
  const preview=await f.request(token,'/import/preview','POST',{csv:csv([{...f.pupil,version:1,kimono:'M2'}])});assert.equal(preview.status,200);assert.equal((await f.request(token,'/import/commit','POST',{token:(await preview.json()).token})).status,200);assert.equal((await f.store.student(f.pupil.id)).kimono,'M2');
 });
 test('Equipe: seleção por turma, datas válidas, lista histórica e salvamento com auditoria',async t=>{
@@ -72,8 +73,8 @@ test('Contas administrativas: só administrador gerencia administradores, sem at
  const admin=await f.store.saveStaffAccount(f.admin.user_id,null,staffData('other.admin@example.test','admin'));
  assert.equal((await f.request(secToken,'/staff-accounts','POST',staffData('forbidden@example.test','admin'))).status,403);
  for(const patch of [{...admin,active:false},{...admin,role:'secretary'},{...admin,name:'Alteração indevida'}])assert.equal((await f.request(secToken,'/staff-accounts/'+admin.user_id,'PATCH',patch)).status,403);
- assert.equal((await f.request(secToken,'/staff-accounts','POST',staffData('other.secretary@example.test'))).status,201);
- for(const token of [adminToken,secToken]){assert.equal((await f.request(token,'/members','POST',staffData('bypass@example.test','admin'))).status,403);assert.equal((await f.request(token,'/members/'+admin.user_id,'PATCH',{role:'guardian',active:false})).status,403);assert.equal((await f.request(token,'/members/'+f.guardian.user_id,'PATCH',{role:'secretary',active:true})).status,400)}
+ assert.equal((await f.request(secToken,'/staff-accounts','POST',staffData('other.secretary@example.test'))).status,403);
+ for(const token of [adminToken,secToken]){assert.equal((await f.request(token,'/members','POST',staffData('bypass@example.test','admin'))).status,403);assert.equal((await f.request(token,'/members/'+admin.user_id,'PATCH',{role:'guardian',active:false})).status,403);assert.equal((await f.request(token,'/members/'+f.guardian.user_id,'PATCH',{role:'secretary',active:true})).status,token===adminToken?400:403)}
  assert.equal((await f.request(guardianToken,'/staff-accounts')).status,403);
  assert.equal((await f.request(await f.login(f.teacher.email),'/staff-accounts')).status,403);
  await assert.rejects(f.store.saveStaffAccount(f.admin.user_id,f.admin.user_id,{...staffData(f.admin.email,'admin'),active:false}),{status:403});

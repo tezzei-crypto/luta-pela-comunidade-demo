@@ -16,7 +16,7 @@ export function absenceEpisodes(rows){
  for(const r of rows){if(r.cancelled)continue;if(r.status==='absent')streak.push(r);else finish()}
  finish();return episodes;
 }
-export function attendanceInsights({db,get,all,run,tx,requireRole,audit,env,transport}){
+export function attendanceInsights({db,get,all,run,tx,requireRole,scope,audit,env,transport}){
  db.exec(`CREATE TABLE IF NOT EXISTS attendance_alerts(
  id TEXT PRIMARY KEY,student_id TEXT NOT NULL REFERENCES students(id),group_id TEXT NOT NULL REFERENCES class_groups(id),
  first_class_id TEXT NOT NULL REFERENCES classes(id),unit TEXT NOT NULL,signal TEXT NOT NULL,
@@ -33,7 +33,7 @@ export function attendanceInsights({db,get,all,run,tx,requireRole,audit,env,tran
  CREATE INDEX IF NOT EXISTS attendance_alerts_unit ON attendance_alerts(unit,signal,last_day);
  CREATE INDEX IF NOT EXISTS attendance_notices_due ON attendance_notices(status,next_attempt);`);
  const stamp=()=>new Date().toISOString();
- function allowed(actor){const m=requireRole(actor,ROLES);if(['admin','secretary'].includes(m.role))return UNITS;
+ function allowed(actor){const m=requireRole(actor,ROLES);if(['admin','secretary'].includes(m.role))return scope.units(actor);
   const p=get("SELECT * FROM professional_profiles WHERE user_id=? AND status='verified' AND review_until>=?",actor,localDay());
   return p?all('SELECT unit FROM professional_units WHERE user_id=?',actor).map(r=>r.unit):[];
  }
@@ -43,7 +43,7 @@ export function attendanceInsights({db,get,all,run,tx,requireRole,audit,env,tran
   if(group_id){const g=get('SELECT * FROM class_groups WHERE id=?',group_id);if(!g||!scope.includes(g.unit)||unit&&g.unit!==unit)fail('Turma indisponível neste núcleo.',403)}
   return {units:unit?[unit]:scope,unit,group_id};
  }
- function recipients(unit){return all("SELECT m.user_id,m.email,m.role FROM members m WHERE m.active=1 AND (m.role IN ('admin','secretary') OR (m.role IN ('psychologist','social_worker') AND EXISTS(SELECT 1 FROM professional_profiles p JOIN professional_units u USING(user_id) WHERE p.user_id=m.user_id AND p.status='verified' AND p.review_until>=? AND u.unit=?))) ORDER BY m.role,m.email",localDay(),unit)}
+ function recipients(unit){return all("SELECT m.user_id,m.email,m.role FROM members m WHERE m.active=1 AND (m.role='admin' OR (m.role='secretary' AND EXISTS(SELECT 1 FROM administrative_units au WHERE au.user_id=m.user_id AND au.unit=?)) OR (m.role IN ('psychologist','social_worker') AND EXISTS(SELECT 1 FROM professional_profiles p JOIN professional_units u USING(user_id) WHERE p.user_id=m.user_id AND p.status='verified' AND p.review_until>=? AND u.unit=?))) ORDER BY m.role,m.email",unit,localDay(),unit)}
  function source(from='2000-01-01',to=localDay()){
   // Historical snapshots preserve the pupils who belonged to each opened lesson.
   return all(`SELECT c.id AS class_id,c.group_id,c.unit,c.day,c.time,c.label,c.cancelled,s.id AS student_id,s.name,s.status AS student_status,

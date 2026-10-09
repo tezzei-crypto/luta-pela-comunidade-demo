@@ -5,7 +5,7 @@ import {localDay} from './professional-tools.mjs';
 const defaults={enabled:true,teacher_email:true,manager_email:true,grace_minutes:720,repeat_hours:24,max_notices:2,quiet_start:20,quiet_end:8,version:0};
 const brParts=clock=>Object.fromEntries(new Intl.DateTimeFormat('en-US',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',hourCycle:'h23'}).formatToParts(clock).map(p=>[p.type,p.value]));
 const brDay=clock=>{const p=brParts(clock);return `${p.year}-${p.month}-${p.day}`};
-export function rollcallTools({db,get,all,run,tx,requireRole,audit,env,transport}){
+export function rollcallTools({db,get,all,run,tx,requireRole,scope,audit,env,transport}){
  db.exec(`CREATE TABLE IF NOT EXISTS attendance_monitor_settings(key TEXT PRIMARY KEY,value TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS rollcall_issues(id TEXT PRIMARY KEY,group_id TEXT NOT NULL REFERENCES class_groups(id),day TEXT NOT NULL,unit TEXT NOT NULL,
  status TEXT NOT NULL,expected INTEGER NOT NULL,marked INTEGER NOT NULL,teachers TEXT NOT NULL,reason TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,UNIQUE(group_id,day));
@@ -20,9 +20,9 @@ export function rollcallTools({db,get,all,run,tx,requireRole,audit,env,transport
  run("INSERT OR IGNORE INTO attendance_monitor_settings VALUES('teacher_start_day',?)",localDay());
  run('INSERT OR IGNORE INTO rollcall_policy VALUES(1,?)',JSON.stringify(defaults));
  const policy=()=>({...defaults,...JSON.parse(get('SELECT value FROM rollcall_policy WHERE id=1').value)});
- const managers=()=>all("SELECT user_id,email,role FROM members WHERE active=1 AND role IN ('admin','secretary')");
+ const managers=unit=>all("SELECT user_id,email,role FROM members WHERE active=1 AND (role='admin' OR (role='secretary' AND EXISTS(SELECT 1 FROM administrative_units au WHERE au.user_id=members.user_id AND au.unit=?)))",unit);
  const teachers=group=>all("SELECT m.user_id,m.email,m.role,p.name FROM group_teachers gt JOIN members m ON m.user_id=gt.teacher_id JOIN teacher_profiles p ON p.user_id=m.user_id WHERE gt.group_id=? AND m.active=1 AND m.role='teacher' AND (p.status='verified' OR p.test_access=1) AND EXISTS(SELECT 1 FROM teacher_units tu WHERE tu.user_id=m.user_id AND tu.unit=?)",group.id,group.unit);
- const recipients=(g,day,p)=>[...(p.manager_email?managers():[]),...(p.teacher_email&&day>=get("SELECT value FROM attendance_monitor_settings WHERE key='teacher_start_day'").value?teachers(g):[])];
+ const recipients=(g,day,p)=>[...(p.manager_email?managers(g.unit):[]),...(p.teacher_email&&day>=get("SELECT value FROM attendance_monitor_settings WHERE key='teacher_start_day'").value?teachers(g):[])];
  function reconcile(clock=new Date()){
   const p=policy(),now=+clock,today=brDay(clock),start=get("SELECT value FROM attendance_monitor_settings WHERE key='start_day'").value;
   // Never invent obligations before installation or before a group's creation.
@@ -54,7 +54,7 @@ export function rollcallTools({db,get,all,run,tx,requireRole,audit,env,transport
   }
  }
  function access(actor){return requireRole(actor,['admin','secretary','teacher'])}
- function settings(actor){const m=access(actor);return {...policy(),can_edit:['admin','secretary'].includes(m.role),mail_configured:!!(env.RESEND_API_KEY&&env.MAIL_FROM),time_zone:'America/Sao_Paulo',check_interval_minutes:5}}
+ function settings(actor){const m=access(actor);return {...policy(),can_edit:m.role==='admin',mail_configured:!!(env.RESEND_API_KEY&&env.MAIL_FROM),time_zone:'America/Sao_Paulo',check_interval_minutes:5}}
  function quiet(p,clock){const h=Number(brParts(clock).hour);return p.quiet_start!==p.quiet_end&&(p.quiet_start>p.quiet_end?(h>=p.quiet_start||h<p.quiet_end):(h>=p.quiet_start&&h<p.quiet_end))}
  let delivering=false;
  return {
@@ -62,7 +62,7 @@ export function rollcallTools({db,get,all,run,tx,requireRole,audit,env,transport
   checkRollcalls:clock=>tx(()=>reconcile(clock)),
   async rollcallSettings(actor){return settings(actor)},
   async saveRollcallSettings(actor,input){return tx(()=>{
-   requireRole(actor,['admin','secretary']);const old=policy(),p={};
+   requireRole(actor,['admin']);const old=policy(),p={};
    if(input?.version!==old.version)fail('As regras foram alteradas por outra pessoa. Atualize antes de salvar.',409);
    for(const k of ['enabled','teacher_email','manager_email']){if(typeof input[k]!=='boolean')fail('Escolha se os avisos estão ativados.');p[k]=input[k]}
    for(const [k,min,max]of [['grace_minutes',0,2880],['repeat_hours',1,168],['max_notices',1,5],['quiet_start',0,23],['quiet_end',0,23]]){if(!Number.isSafeInteger(input[k])||input[k]<min||input[k]>max)fail('Confira os limites dos prazos e horários dos avisos.');p[k]=input[k]}
@@ -71,7 +71,7 @@ export function rollcallTools({db,get,all,run,tx,requireRole,audit,env,transport
   async rollcallIssues(actor,p={},clock=new Date()){
    const m=access(actor);tx(()=>reconcile(clock));
    return all('SELECT i.*,g.label,g.start_time,g.end_time,c.id AS class_id FROM rollcall_issues i JOIN class_groups g ON g.id=i.group_id LEFT JOIN classes c ON c.group_id=i.group_id AND c.day=i.day ORDER BY day DESC,g.start_time')
-    .filter(r=>(!p.unit||r.unit===p.unit)&&(!p.group_id||r.group_id===p.group_id)&&(!p.status||r.status===p.status)&&(m.role!=='teacher'||teachers({id:r.group_id,unit:r.unit}).some(t=>t.user_id===actor)))
+    .filter(r=>(m.role!=='secretary'||scope.permits(actor,r.unit))&&(!p.unit||r.unit===p.unit)&&(!p.group_id||r.group_id===p.group_id)&&(!p.status||r.status===p.status)&&(m.role!=='teacher'||teachers({id:r.group_id,unit:r.unit}).some(t=>t.user_id===actor)))
     .map(r=>({...r,notify_after:new Date(+new Date(r.day+'T'+r.end_time+':00-03:00')+policy().grace_minutes*60000).toISOString(),within_grace:+clock<+new Date(r.day+'T'+r.end_time+':00-03:00')+policy().grace_minutes*60000,teachers:JSON.parse(r.teachers),notifications:all('SELECT n.recipient_id,m.email,m.role,n.status,n.send_count,n.last_sent,n.last_error FROM rollcall_notices n JOIN members m ON m.user_id=n.recipient_id WHERE n.issue_id=?',r.id).filter(n=>m.role!=='teacher'||n.recipient_id===actor)}));
   },
   async cancelClass(actor,id,p){return tx(()=>{const m=access(actor),c=get('SELECT * FROM classes WHERE id=?',id);if(!c)fail('Aula não localizada.',404);

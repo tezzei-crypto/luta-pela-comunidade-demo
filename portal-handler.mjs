@@ -27,7 +27,7 @@ export async function handlePortal(req,env=process.env,injectedStore){
   if(method!=='GET'){
    if(!sameOrigin(req,env))fail('Origem não permitida.',403);
   }
-  const store=injectedStore||createStore(env);
+  let store=injectedStore||createStore(env);
   const body=async()=>{try{const p=await req.json();if(!p||typeof p!=='object'||Array.isArray(p))throw Error();return p}catch{fail('Dados inválidos.')}};
   if(route==='/auth/request'&&method==='POST'){
    const {email}=await body();if(typeof email!=='string'||email.length>254||!/^\S+@\S+\.\S+$/.test(email))fail('Informe um email válido.');
@@ -49,6 +49,9 @@ export async function handlePortal(req,env=process.env,injectedStore){
   const role=member.role,actor=user.id,staff=['admin','secretary'].includes(role);
   const requireRole=(...roles)=>{if(!roles.includes(role))fail('Acesso não permitido.',403)};
   requireRouteAccess(role,route,method);
+  const administrativeUnits=staff&&store.administrativeScope?await store.administrativeScope(actor):undefined;
+  if(role==='secretary'&&!store.forActor)fail('Separação por núcleo indisponível. Procure a administração.',503);
+  if(store.forActor)store=store.forActor(actor);
   const editorResponse=await handleSiteEditor({req,route,method,url,store,actor,requireRole});if(editorResponse)return editorResponse;
   if(route==='/sync'&&method==='GET')return json(await store.systemRevision(actor));
   if(route==='/diagnostics'&&method==='GET'){requireRole('admin');return json(store.diagnosticEvents(actor,{support_id:url.searchParams.get('support_id')||'',kind:url.searchParams.get('kind')||'',page:Number(url.searchParams.get('page')||0)}));}
@@ -64,7 +67,7 @@ export async function handlePortal(req,env=process.env,injectedStore){
   };
   const roster=async()=>staff?store.students():linked.length?store.students(linked):[];
   if(route==='/auth/verify'&&method==='POST')return json({access_token:session.access_token,expires_in:session.expires_in,role,email:member.email});
-  if(route==='/me'&&method==='GET')return json({role,email:member.email,user_id:actor,session_expires_at:user.expires_at,...(role==='teacher'?{test_access:await store.teacherTestAccess(actor)}:{})});
+  if(route==='/me'&&method==='GET')return json({role,email:member.email,user_id:actor,session_expires_at:user.expires_at,...(staff?{units:administrativeUnits,scope:role==='admin'?'global':'units'}:{}),...(role==='teacher'?{test_access:await store.teacherTestAccess(actor)}:{})});
   const professionals=await handleProfessionals({req,route,method,url,store,actor});if(professionals)return professionals;
   const details=await handleStudentDetails({req,route,method,store,actor});if(details)return details;
   const teaching=await handleTeaching({route,method,req,url,store,actor});if(teaching)return teaching;
@@ -72,7 +75,7 @@ export async function handlePortal(req,env=process.env,injectedStore){
    requireRole('admin','secretary');const days=Number(url.searchParams.get('days')||30);if(![7,30,90].includes(days))fail('Período inválido.');
    const result=await store.dashboard(actor,days);
    // Administrators and the secretary share the management dashboard.
-   return json({...result,metrics_enabled:staff&&!!metricsEnabled(env),intake_enabled:env.PORTAL_INTAKE_ACTIVE==='true',registry_active:usesPortalRegistry(env)});
+   return json({...result,metrics_enabled:role==='admin'&&!!metricsEnabled(env),intake_enabled:env.PORTAL_INTAKE_ACTIVE==='true',registry_active:usesPortalRegistry(env)});
   }
   if(route==='/audit'&&method==='GET'){requireRole('admin','secretary');return json({events:await store.auditLog()})}
   if(route==='/registrations'&&method==='GET'){
@@ -121,7 +124,7 @@ export async function handlePortal(req,env=process.env,injectedStore){
    requireRole('admin','secretary','guardian');const context=await store.appointmentContext(actor,appointmentMatch[1]);
    if(method==='GET')return json({student:{id:context.student.id,name:context.student.name,age:ageAt(context.student.birth_date)},contact:context.contact});
    if(method==='POST'){
-    const p=await body();const internal=new Request(url.origin+'/api/agenda',{method:'POST',headers:{origin:req.headers.get('origin'),'Content-Type':'application/json'},body:JSON.stringify({...p,studentId:context.student.id})});
+    const p=await body();if(role==='secretary'){const result=await store.createAppointmentRequest({...p,studentId:context.student.id},actor);return json({message:result.reserved?'Solicitação recebida. Aguarde a confirmação da secretaria.':'Preferência recebida, sem reserva de horário. Aguarde a secretaria.',...result});}const internal=new Request(url.origin+'/api/agenda',{method:'POST',headers:{origin:req.headers.get('origin'),'Content-Type':'application/json'},body:JSON.stringify({...p,studentId:context.student.id})});
     const result=await handleAgenda(internal,env,fetch,async()=>[{id:context.student.id,status:context.student.status}],context.student);
     if(result.ok)await store.audit(actor,'appointment.request',context.student.id);return result;
    }

@@ -12,7 +12,7 @@ Site público e portal privado em HTML, CSS e JavaScript, com Node.js 24 e SQLit
 
 ## Editor do site
 
-Administração e secretaria acessam `/administracao/#site-editor-area`. O editor oferece textos, imagens, links, títulos e descrições das nove páginas públicas catalogadas, além das perguntas, opções e mensagens do contato pelo WhatsApp. Campos dinâmicos de validação, documentos privados e regras operacionais continuam nos respectivos módulos. Cada página mantém seu próprio rascunho; salvar não publica. Confira a prévia, descreva a alteração e publique. O histórico recupera a versão anterior como rascunho, exigindo nova publicação. Versões concorrentes retornam conflito, sem sobrescrever outra edição.
+Administradores gerais acessam `/administracao/#site-editor-area`. O editor oferece textos, imagens, links, títulos e descrições das nove páginas públicas catalogadas, além das perguntas, opções e mensagens do contato pelo WhatsApp. Campos dinâmicos de validação, documentos privados e regras operacionais continuam nos respectivos módulos. Cada página mantém seu próprio rascunho; salvar não publica. Confira a prévia, descreva a alteração e publique. O histórico recupera a versão anterior como rascunho, exigindo nova publicação. Versões concorrentes retornam conflito, sem sobrescrever outra edição.
 
 Imagens autorizadas para divulgação são reprocessadas em WebP sem metadados e armazenadas separadamente dos documentos privados. A biblioteca aceita JPG, PNG e WebP estáticos de até 8 MB e 40 milhões de pixels. Alterar código ou estrutura de uma página pode invalidar seu rascunho anterior; o editor exige reabertura e conferência. Templates públicos são renderizados no servidor para que as edições apareçam antes da execução do JavaScript. Testes utilizam somente dados fictícios.
 
@@ -42,7 +42,7 @@ O menu autenticado separa Alunos, Candidatos, Professores, Psicologia e assistê
 
 BOOTSTRAP_AMAVALE_GROUPS=true, junto do arquivo privado inicial, cadastra uma única vez as turmas autorizadas de terça/quinta: 11–17 anos às 15:00–16:00 e 5–10 anos às 16:25–17:00. Matrículas iniciais consideram a idade na data da implantação e somente os IDs da importação aprovada. Não altera matrícula em reinícios. Aniversários e novas aprovações exigem conferência da matrícula pela administração.
 
-Profissionais entram por código no email. O cadastro, RG/CPF e documentos são gerenciados por administradores e secretaria. A liberação exige conferência humana, foto, conselho atualizado e prazo de nova conferência. Novos documentos suspendem a oferta de horários até reconferência. Não há consulta automática aos conselhos.
+Profissionais entram por código no email. O cadastro, RG/CPF e documentos são gerenciados pela administração geral ou por secretaria autorizada para todos os núcleos do profissional. Cadastros compartilhados com núcleos fora do escopo têm gestão centralizada. A liberação exige conferência humana, foto, conselho atualizado e prazo de nova conferência. Novos documentos suspendem a oferta de horários até reconferência. Não há consulta automática aos conselhos.
 
 Horários são explícitos, em Brasília, por núcleo. Reserva com transação SQLite, prevenção de sobreposição do profissional/aluno, idempotência e controle de versão. A secretaria confirma por WhatsApp e registra a confirmação. O sistema não envia WhatsApp automaticamente. Solicitações persistem mesmo com falha no aviso por email.
 
@@ -50,10 +50,12 @@ Os formulários Ocorrência e Lesão usam os campos do modelo Relatorios_Jiu_Jit
 
 ## Equipe, permissões e frequência
 
-- `/administracao/#team-area`: Equipe e acessos, com cadastro de secretaria e administradores por nome completo, email e telefone. Somente administradores gerais gerenciam contas de outros administradores. A secretaria pode gerenciar outras contas de secretaria. Ninguém desativa a própria conta ou altera a própria função. Sessões e códigos são revogados quando o acesso muda; versões evitam perda de edições simultâneas.
-- Administradores e secretaria gerenciam alunos, candidatos, documentos, equipe, turmas, agenda, planilhas e histórico. Uma inscrição completa continua pendente até aprovação explícita; só então recebe ID.
+- `/administracao/#team-area`: Equipe e acessos, com cadastro de secretaria e administradores por nome completo, email e telefone. Somente administradores gerais gerenciam contas de outros administradores. Somente a administração geral concede funções e núcleos às secretarias. Ninguém desativa a própria conta ou altera a própria função. Sessões e códigos são revogados quando o acesso muda; versões evitam perda de edições simultâneas.
+- Administradores gerenciam todo o projeto. Secretarias gerenciam alunos, candidatos, documentos, equipe, turmas, agenda e planilhas apenas nos núcleos atribuídos. O histórico geral, as contas e as configurações globais ficam com a administração geral. Uma inscrição completa continua pendente até aprovação explícita; só então recebe ID.
 - Professor tem presença dos alunos e relatos de ocorrência/lesão nos núcleos autorizados. Consulta os próprios relatos; não acessa fichas privadas, cadastros, agenda ou chamada da equipe.
 - Psicologia e assistência social têm relatos dos núcleos autorizados e somente a própria agenda e solicitações. Não têm acesso ao cadastro privado dos alunos nem a agendas de outros profissionais.
 - Monitores têm cadastro administrativo com núcleos de atuação, sem criar login automaticamente. Frequência da equipe é lançada pela secretaria ou administração: selecionar turma, data e integrantes previstos, marcar e salvar em lote. Ausência de marcação não vira falta. Lista histórica, correções, autor, versão e CSV são preservados.
 
 O menu mobile recolhe após a escolha; botões de chamada têm pelo menos 48 px, campos usam fonte de 16 px e há confirmação do salvamento. Testes de largura não equivalem a certificação em aparelhos físicos. Fundamentação: autorização em cada requisição e menor privilégio (OWASP Authorization Cheat Sheet), tamanho de alvos e ampliação/refluxo (WCAG 2.2). A suíte automatizada usa somente dados fictícios e diretórios temporários.
+
+Consulte [Núcleos e permissões](NUCLEOS_E_PERMISSOES.md) para a matriz de autorização, a migração das contas existentes e os critérios de teste.

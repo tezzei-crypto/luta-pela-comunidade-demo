@@ -1,3 +1,4 @@
+import {unitScope,scopedSecretaryStore} from './unit-scope.mjs';
 import {appointmentNotices} from './appointment-notices.mjs';
 import {systemSync} from './system-sync.mjs';
 import {siteEditor} from './site-editor.mjs';
@@ -61,14 +62,15 @@ export function createSqliteStore(env,{transport=fetch}={}){
  const documentRow=r=>{run('INSERT INTO documents(id,student_id,kind,object_path,original_name,mime,size,created_by,created_at) VALUES(?,?,?,?,?,?,?,?,?)',r.id,r.student_id,r.kind,r.object_path,r.original_name,r.mime,r.size,r.created_by,nowIso())};
  const asRegistration=r=>r?{...r,documents:JSON.parse(r.documents)}:undefined;
  function objectPath(key){if(typeof key!=='string'||!key||key.split('/').some(p=>!p||p==='.'||p==='..'||!/^[a-zA-Z0-9_.-]+$/.test(p)))fail('Arquivo inválido.');const full=path.resolve(objects,...key.split('/'));if(!full.startsWith(objects+path.sep))fail('Arquivo inválido.');return full}
- const teaching=teacherTools({db,get,all,run,tx,requireRole,audit});
+ const scope=unitScope({db,get,all,requireRole});
+ const teaching=teacherTools({db,get,all,run,tx,requireRole,scope,audit});
  let insights,rollcalls;
- const project=projectTools({db,get,all,run,tx,requireRole,audit,requireUnit:teaching.requireUnit,onAttendanceChanged:()=>{insights?.attendanceReconcile();rollcalls?.rollcallReconcile()}});
- const professionals=professionalTools({db,get,all,run,tx,requireRole,audit});
- const scheduling=schedulingTools({db,get,all,run,tx,requireRole,audit,...professionals});
+ const project=projectTools({db,get,all,run,tx,requireRole,scope,audit,requireUnit:teaching.requireUnit,onAttendanceChanged:()=>{insights?.attendanceReconcile();rollcalls?.rollcallReconcile()}});
+ const professionals=professionalTools({db,get,all,run,tx,requireRole,scope,audit});
+ const scheduling=schedulingTools({db,get,all,run,tx,requireRole,scope,audit,...professionals});
  const agendaNotices=appointmentNotices({db,get,all,run,tx,audit,env,transport,professionalApproved:professionals.professionalApproved});
- insights=attendanceInsights({db,get,all,run,tx,requireRole,audit,env,transport});
- rollcalls=rollcallTools({db,get,all,run,tx,requireRole,audit,env,transport});
+ insights=attendanceInsights({db,get,all,run,tx,requireRole,scope,audit,env,transport});
+ rollcalls=rollcallTools({db,get,all,run,tx,requireRole,scope,audit,env,transport});
  db.exec('CREATE TABLE IF NOT EXISTS student_sequences(prefix TEXT PRIMARY KEY,last_number INTEGER NOT NULL CHECK(last_number BETWEEN 0 AND 999999))');
  const initial=env.BOOTSTRAP_ADMIN_EMAIL?.trim().toLowerCase();
  if(initial&&emailValid(initial)&&!get("SELECT user_id FROM members WHERE role='admin'")){
@@ -90,9 +92,9 @@ export function createSqliteStore(env,{transport=fetch}={}){
   }return rows.length;
  })}
  const api={
-  ...siteEditor({db,get,all,run,tx,requireRole,audit,objectPath}),
-  ...diagnostics({db,get,all,run,tx,requireRole,audit}),
-  ...contactSettings({db,get,run,tx,requireRole,audit}),...insights,...rollcalls,...staffAccounts({db,get,all,run,tx,requireRole,audit}),...project,...teaching,...professionals,...scheduling,...workforceTools({db,get,all,run,tx,requireRole,audit}),...studentDetails({db,get,all,run,tx,requireRole,audit}),
+  ...siteEditor({db,get,all,run,tx,requireRole,scope,audit,objectPath}),
+  ...diagnostics({db,get,all,run,tx,requireRole,scope,audit}),
+  ...contactSettings({db,get,run,tx,requireRole,audit}),...insights,...rollcalls,...staffAccounts({db,get,all,run,tx,requireRole,scope,audit}),...project,...teaching,...professionals,...scheduling,...workforceTools({db,get,all,run,tx,requireRole,scope,audit}),...studentDetails({db,get,all,run,tx,requireRole,scope,audit}),
   ...agendaNotices,
   async sendBookingNotice(actor,id){await scheduling.booking(actor,id);await agendaNotices.sendPrivateNotice(id)},
   close:()=>db.close(),
@@ -186,6 +188,14 @@ export function createSqliteStore(env,{transport=fetch}={}){
    return result;
   },
   async backup(){const dir=path.join(root,'backups');fs.mkdirSync(dir,{recursive:true,mode:0o700});const file=path.join(dir,'portal-'+nowIso().replace(/[:.]/g,'-')+'.sqlite');await backup(db,file);return file}
+ };
+ api.administrativeScope=async actor=>scope.units(actor);
+ api.forActor=actor=>{
+  const initialRole=member(actor)?.role,limited=initialRole==='secretary'?scopedSecretaryStore(api,actor,{scope,get,all}):api;
+  return new Proxy(Object.create(null),{get:(_,name)=>name==='then'?undefined:(...args)=>{
+   const current=member(actor);if(!current||current.role!==initialRole)fail('O acesso foi alterado. Entre novamente.',401);
+   return limited[name](...args);
+  }});
  };
  Object.assign(api,systemSync({db,get,requireRole,secret:env.PORTAL_SECRET}));
  return api;

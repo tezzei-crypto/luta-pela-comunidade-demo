@@ -1,16 +1,17 @@
 import {randomUUID} from 'node:crypto';
 import {fail} from './portal-domain.mjs';
 
-export function staffAccounts({db,get,all,run,tx,requireRole,audit}){
+export function staffAccounts({db,get,all,run,tx,requireRole,scope,audit}){
  db.exec(`CREATE TABLE IF NOT EXISTS administrative_profiles(user_id TEXT PRIMARY KEY REFERENCES members(user_id),name TEXT NOT NULL,phone TEXT NOT NULL DEFAULT '',version INTEGER NOT NULL DEFAULT 1,updated_at TEXT NOT NULL)`);
  const query=`SELECT m.user_id,m.email,m.role,m.active,COALESCE(p.name,'') AS name,COALESCE(p.phone,'') AS phone,COALESCE(p.version,0) AS version,p.updated_at FROM members m LEFT JOIN administrative_profiles p ON p.user_id=m.user_id WHERE m.role IN ('admin','secretary')`;
- const clean=r=>r?{...r,active:!!r.active}:undefined;
+ const clean=r=>r?{...r,active:!!r.active,units:r.role==='admin'?[]:all('SELECT unit FROM administrative_units WHERE user_id=? ORDER BY unit',r.user_id).map(u=>u.unit)}:undefined;
  const row=id=>clean(get(query+' AND m.user_id=?',id));
  return {
-  async staffAccounts(actor){requireRole(actor,['admin','secretary']);return all(query+' ORDER BY m.role,m.email').map(clean)},
+  async staffAccounts(actor){requireRole(actor,['admin']);return all(query+' ORDER BY m.role,m.email').map(clean)},
   async saveStaffAccount(actor,id,p){return tx(()=>{
-   const who=requireRole(actor,['admin','secretary']);
+   const who=requireRole(actor,['admin']);
    if(!p||typeof p!=='object'||!['admin','secretary'].includes(p.role)||typeof p.active!=='boolean'||!Number.isSafeInteger(p.version)||p.version<0)fail('Confira a função e a situação da conta.');
+   const units=p.role==='secretary'?scope.validate(p.units):[];
    const old=id?row(id):null;if(id&&!old)fail('Conta administrativa não localizada.',404);
    if(who.role!=='admin'&&(p.role==='admin'||old?.role==='admin'))fail('Somente administradores gerais podem gerenciar administradores.',403);
    const name=typeof p.name==='string'?p.name.trim():'',phone=typeof p.phone==='string'?p.phone.trim():'';
@@ -24,10 +25,11 @@ export function staffAccounts({db,get,all,run,tx,requireRole,audit}){
    const uid=id||randomUUID(),version=p.version+1,now=new Date().toISOString();
    if(old){
     run('UPDATE members SET role=?,active=? WHERE user_id=?',p.role,Number(p.active),uid);
-    if(old.role!==p.role||old.active!==p.active){run('DELETE FROM sessions WHERE user_id=?',uid);run('DELETE FROM challenges WHERE email=?',email)}
+    if(old.role!==p.role||old.active!==p.active||JSON.stringify(old.units)!==JSON.stringify(units)){run('DELETE FROM sessions WHERE user_id=?',uid);run('DELETE FROM challenges WHERE email=?',email)}
    }else run('INSERT INTO members(user_id,email,role,active) VALUES(?,?,?,?)',uid,email,p.role,Number(p.active));
+   run('DELETE FROM administrative_units WHERE user_id=?',uid);for(const unit of units)run('INSERT INTO administrative_units(user_id,unit) VALUES(?,?)',uid,unit);
    run('INSERT INTO administrative_profiles(user_id,name,phone,version,updated_at) VALUES(?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET name=excluded.name,phone=excluded.phone,version=excluded.version,updated_at=excluded.updated_at',uid,name,phone,version,now);
-   audit(actor,`staff.${old?'update':'create'}:${uid}:${old?.role||'new'}>${p.role}:${old?.active??'new'}>${p.active}:v${version}`);
+   audit(actor,`staff.${old?'update':'create'}:${uid}:${old?.role||'new'}>${p.role}:${old?.active??'new'}>${p.active}:v${version}:units=${(old?.units||[]).join(',')}>${units.join(',')}`);
    return row(uid);
   })}
  };
