@@ -30,7 +30,8 @@ export function startRollcallPanel({api,el,field,action,notice,active,showPanel,
   if(s.quiet_start!==s.quiet_end)content.append(el('p',`Emails pausados das ${String(s.quiet_start).padStart(2,'0')}h às ${String(s.quiet_end).padStart(2,'0')}h, horário de Brasília. O painel continua disponível.`));
   if(!s.mail_configured)content.append(el('p','Envio de email indisponível: o servidor ainda precisa de configuração. As pendências permanecem visíveis neste painel.',{class:'form-error',role:'status'}));
   if(!s.teacher_email)content.append(el('p','Emails aos professores desativados. A lista no painel permanece disponível.'));
-  const filters=el('form');const uf=field(filters,'Núcleo','unit','',{options:{'':'Todos os núcleos',...units}}),sf=field(filters,'Situação','status','open',{options:{open:'Chamadas a concluir',resolved:'Concluídas',cancelled:'Canceladas','':'Todas'}});filters.addEventListener('submit',e=>e.preventDefault());content.append(filters);
+  const availableUnits=active()?.role==='secretary'?Object.fromEntries(Object.entries(units).filter(([u])=>active().units?.includes(u))):units;
+  const filters=el('form');const uf=field(filters,'Núcleo','unit','',{options:{'':'Todos os núcleos permitidos',...availableUnits}}),sf=field(filters,'Situação','status','open',{options:{open:'Chamadas a concluir',resolved:'Concluídas',cancelled:'Canceladas','':'Todas'}});filters.addEventListener('submit',e=>e.preventDefault());content.append(filters);
   const list=el('div');content.append(list);
   const draw=()=>{
    list.replaceChildren();const visible=issues.filter(i=>(!uf.value||i.unit===uf.value)&&(!sf.value||i.status===sf.value));
