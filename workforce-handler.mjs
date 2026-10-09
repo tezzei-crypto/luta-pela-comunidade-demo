@@ -2,7 +2,7 @@ import {csv,fail} from './portal-domain.mjs';
 const headers={'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'};
 const json=(data,status=200)=>Response.json(data,{status,headers});
 export async function handleWorkforce({req,route,method,url,store,actor}){
- const body=async()=>{try{return await req.json()}catch{fail('Dados inválidos.')}};
+ const body=async()=>{try{const p=await req.json();if(!p||typeof p!=='object'||Array.isArray(p))throw Error();return p}catch{fail('Dados inválidos.')}};
  if(route==='/monitors'&&method==='GET')return json({monitors:await store.monitors(actor)});
  if(route==='/monitors'&&method==='POST')return json({monitor:await store.saveMonitor(actor,null,await body()),message:'Monitor cadastrado. Este registro não cria uma conta de acesso.'},201);
  const m=route.match(/^\/monitors\/([0-9a-f-]{36})$/i);if(m&&method==='PATCH')return json({monitor:await store.saveMonitor(actor,m[1],await body()),message:'Cadastro do monitor atualizado.'});

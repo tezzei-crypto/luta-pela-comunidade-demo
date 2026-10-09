@@ -10,6 +10,7 @@ export async function mountAppointmentInbox(host,c){
   let loaded=false;card.addEventListener('toggle',action(async()=>{if(!card.open||loaded)return;const {slots}=await api('/appointment-requests/'+r.id+'/slots');
    card.append(el('p','Modalidade desejada: '+({any:'Presencial ou online',in_person:'Presencial',online:'Online'}[r.requested_modality]||'A definir')));
    card.append(phoneContact('Solicitante: '+r.contact_name+' · '+r.phone,r.phone,r.contact_name),el('p','Protocolo: '+r.id));
+   if(r.notice_state==='review')card.append(el('p','O envio do aviso por email precisa de conferência no provedor. A solicitação está salva neste painel.',{class:'muted'}));
    const form=el('form');field(form,'Decisão','action','reserve',{options:{reserve:'Reservar um horário publicado',cancel:'Encerrar esta solicitação'}});
    const pick=field(form,'Horário para atendimento','slot_id','',{options:{'':'Escolha uma vaga',...Object.fromEntries(slots.map(s=>[s.id,slotLabel(s)]))}});
    const line=el('label',undefined,{class:'check-label'}),ack=el('input',undefined,{type:'checkbox'});line.append(ack,document.createTextNode('Conferi com o solicitante qualquer mudança de especialidade, núcleo, modalidade ou horário.'));form.append(line);

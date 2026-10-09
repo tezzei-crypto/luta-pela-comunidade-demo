@@ -3,7 +3,7 @@ import {fail,fileType,csv} from './portal-domain.mjs';
 const headers={'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer'};
 const json=(p,s=200)=>Response.json(p,{status:s,headers});
 export async function handleTeaching({route,method,req,url,store,actor}){
- const body=async()=>{try{return await req.json()}catch{fail('Dados inválidos.')}};
+ const body=async()=>{try{const p=await req.json();if(!p||typeof p!=='object'||Array.isArray(p))throw Error();return p}catch{fail('Dados inválidos.')}};
  if(route==='/units'&&method==='GET')return json({units:await store.availableUnits(actor)});
  if(route==='/unit-roster'&&method==='GET')return json({students:await store.unitRoster(actor,url.searchParams.get('unit'))});
  if(route==='/teachers'&&method==='GET')return json({teachers:await store.teachers(actor)});
