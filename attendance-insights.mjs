@@ -17,7 +17,7 @@ export function absenceEpisodes(rows,threshold=3){
  for(const r of rows){if(r.cancelled)continue;if(r.status==='absent')streak.push(r);else finish()}
  finish();return episodes;
 }
-export function attendanceInsights({db,get,all,run,tx,requireRole,audit,env,transport}){
+export function attendanceInsights({db,get,all,run,tx,requireRole,scope,audit,env,transport}){
  db.exec(`CREATE TABLE IF NOT EXISTS attendance_alerts(
  id TEXT PRIMARY KEY,student_id TEXT NOT NULL REFERENCES students(id),group_id TEXT NOT NULL REFERENCES class_groups(id),
  first_class_id TEXT NOT NULL REFERENCES classes(id),unit TEXT NOT NULL,signal TEXT NOT NULL,
@@ -33,9 +33,10 @@ export function attendanceInsights({db,get,all,run,tx,requireRole,audit,env,tran
  updated_at TEXT NOT NULL,PRIMARY KEY(alert_id,recipient_id));
  CREATE INDEX IF NOT EXISTS attendance_alerts_unit ON attendance_alerts(unit,signal,last_day);
  CREATE INDEX IF NOT EXISTS attendance_notices_due ON attendance_notices(status,next_attempt);`);
+ if(!all('PRAGMA table_info(attendance_notices)').some(c=>c.name==='payload'))db.exec("ALTER TABLE attendance_notices ADD COLUMN payload TEXT NOT NULL DEFAULT ''");
  const policy=absencePolicy({db,get,all,run,tx,requireRole,audit,impact:threshold=>({active_before:countActive(policy.readAbsencePolicy().threshold),active_after:countActive(threshold)}),onChange:()=>reconcile()});
  const stamp=()=>new Date().toISOString();
- function allowed(actor){const m=requireRole(actor,ROLES);if(['admin','secretary'].includes(m.role))return UNITS;
+ function allowed(actor){const m=requireRole(actor,ROLES);if(['admin','secretary'].includes(m.role))return scope.units(actor);
   const p=get("SELECT * FROM professional_profiles WHERE user_id=? AND status='verified' AND review_until>=?",actor,localDay());
   return p?all('SELECT unit FROM professional_units WHERE user_id=?',actor).map(r=>r.unit):[];
  }
@@ -45,7 +46,8 @@ export function attendanceInsights({db,get,all,run,tx,requireRole,audit,env,tran
   if(group_id){const g=get('SELECT * FROM class_groups WHERE id=?',group_id);if(!g||!scope.includes(g.unit)||unit&&g.unit!==unit)fail('Turma indisponível neste núcleo.',403)}
   return {units:unit?[unit]:scope,unit,group_id};
  }
- function recipients(unit){return all("SELECT m.user_id,m.email,m.role FROM members m WHERE m.active=1 AND (m.role IN ('admin','secretary') OR (m.role IN ('psychologist','social_worker') AND EXISTS(SELECT 1 FROM professional_profiles p JOIN professional_units u USING(user_id) WHERE p.user_id=m.user_id AND p.status='verified' AND p.review_until>=? AND u.unit=?))) ORDER BY m.role,m.email",localDay(),unit)}
+ function groupTeachers(unit,group=''){return all("SELECT DISTINCT m.user_id,m.email,m.role FROM members m JOIN teacher_profiles p ON p.user_id=m.user_id JOIN teacher_units u ON u.user_id=m.user_id JOIN group_teachers gt ON gt.teacher_id=m.user_id JOIN class_groups g ON g.id=gt.group_id WHERE m.active=1 AND m.role='teacher' AND (p.status='verified' OR p.test_access=1) AND u.unit=? AND g.unit=? AND g.active=1 AND (?='' OR gt.group_id=?)",unit,unit,group,group)}
+ function recipients(unit,group=''){return [...all("SELECT m.user_id,m.email,m.role FROM members m WHERE m.active=1 AND (m.role='admin' OR (m.role='secretary' AND EXISTS(SELECT 1 FROM administrative_units au WHERE au.user_id=m.user_id AND au.unit=?)) OR (m.role IN ('psychologist','social_worker') AND EXISTS(SELECT 1 FROM professional_profiles p JOIN professional_units u USING(user_id) WHERE p.user_id=m.user_id AND p.status='verified' AND p.review_until>=? AND u.unit=?))) ORDER BY m.role,m.email",unit,localDay(),unit),...groupTeachers(unit,group)]}
  function source(from='2000-01-01',to=localDay()){
   // Historical snapshots preserve the pupils who belonged to each opened lesson.
   return all(`SELECT c.id AS class_id,c.group_id,c.unit,c.day,c.time,c.label,c.cancelled,s.id AS student_id,s.name,s.status AS student_status,
@@ -76,7 +78,7 @@ export function attendanceInsights({db,get,all,run,tx,requireRole,audit,env,tran
     if(!old){const id=randomUUID();run('INSERT INTO attendance_alerts(id,student_id,group_id,first_class_id,unit,signal,evidence,last_day,streak,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)',id,latest.student_id,latest.group_id,e.start.class_id,latest.unit,signal,evidence,e.last.day,e.rows.length,now,now);old=get('SELECT * FROM attendance_alerts WHERE id=?',id);audit('system','attendance.alert.created:'+id,latest.student_id)}
     else if(old.signal!==signal||old.evidence!==evidence)run('UPDATE attendance_alerts SET signal=?,evidence=?,last_day=?,streak=?,version=version+1,updated_at=? WHERE id=?',signal,evidence,e.last.day,e.rows.length,now,old.id);
     seen.add(old.id);
-    if(signal==='active'&&old.workflow!=='closed')for(const r of recipients(latest.unit))run('INSERT OR IGNORE INTO attendance_notices(alert_id,recipient_id,updated_at) VALUES(?,?,?)',old.id,r.user_id,now);
+    if(signal==='active'&&old.workflow!=='closed')for(const r of recipients(latest.unit,latest.group_id))run('INSERT OR IGNORE INTO attendance_notices(alert_id,recipient_id,updated_at) VALUES(?,?,?)',old.id,r.user_id,now);
    }
   }
   for(const old of all("SELECT id,student_id FROM attendance_alerts WHERE signal<>'corrected'"))if(!seen.has(old.id)){run("UPDATE attendance_alerts SET signal='corrected',version=version+1,updated_at=? WHERE id=?",stamp(),old.id);audit('system','attendance.alert.revised:'+old.id,old.student_id)}
@@ -100,6 +102,16 @@ export function attendanceInsights({db,get,all,run,tx,requireRole,audit,env,tran
  let delivering=false;
  return {
   ...policy,
+  absenceWhatsappTargets(){tx(reconcile);return all("SELECT id,unit,group_id FROM attendance_alerts WHERE signal='active' AND workflow<>'closed'").flatMap(a=>recipients(a.unit,a.group_id).map(m=>({kind:'absence',issue_id:a.id,user_id:m.user_id})))},
+  async absenceAttention(actor){
+   const m=requireRole(actor,[...ROLES,'teacher']);tx(reconcile);
+   const units=m.role==='teacher'?null:allowed(actor);
+   const alerts=all("SELECT a.id,a.student_id,s.name,a.unit,a.group_id,g.label,a.streak,a.evidence,a.workflow,a.next_contact FROM attendance_alerts a JOIN students s ON s.id=a.student_id JOIN class_groups g ON g.id=a.group_id WHERE a.signal='active' AND a.workflow<>'closed' ORDER BY a.last_day,a.created_at")
+    .filter(a=>m.role==='teacher'?groupTeachers(a.unit,a.group_id).some(t=>t.user_id===actor):units.includes(a.unit))
+    .map(a=>({...a,evidence:JSON.parse(a.evidence)}));
+   // Teachers receive evidence for their own groups, never family contacts or case notes.
+   return {threshold:policy.readAbsencePolicy().threshold,alerts};
+  },
   reconcileAttendanceAlerts:()=>tx(reconcile),attendanceReconcile:reconcile,
   async attendanceReport(actor,p){requireRole(actor,ROLES);tx(reconcile);audit(actor,'attendance.report');return report(actor,p)},
   async attendanceReportOptions(actor){const scope=allowed(actor);return {units:scope,groups:all('SELECT id,unit,label,start_time,active FROM class_groups ORDER BY unit,start_time,label').filter(g=>scope.includes(g.unit))}},
@@ -109,17 +121,19 @@ export function attendanceInsights({db,get,all,run,tx,requireRole,audit,env,tran
    if(!['pending','attempted','contacted','monitoring','closed'].includes(p.workflow)||!['phone','whatsapp','email','in_person','internal'].includes(p.channel)||!['no_reply','reached','return_planned','other'].includes(p.outcome)||typeof p.note!=='string'||p.note.trim().length<5||p.note.length>1500||/[\x00-\x08\x0b\x0c\x0e-\x1f]/.test(p.note))fail('Confira situação, canal, resultado e registro do contato.');
    const next=p.next_contact||'';if(next){attendanceDate(next);if(next<localDay())fail('A próxima tentativa não pode ficar no passado.')}if(['attempted','monitoring'].includes(p.workflow)&&!next)fail('Defina a próxima tentativa ou revisão.');
    const now=stamp();run('INSERT INTO attendance_followups VALUES(?,?,?,?,?,?,?,?,?)',randomUUID(),id,actor,p.channel,p.outcome,p.note.trim(),p.workflow,next,now);
-   run('UPDATE attendance_alerts SET workflow=?,owner_id=?,next_contact=?,version=version+1,updated_at=? WHERE id=?',p.workflow,actor,p.workflow==='closed'?'':next,now,id);audit(actor,'attendance.followup:'+id,a.student_id);return alertRead(actor,id);
+   run('UPDATE attendance_alerts SET workflow=?,owner_id=?,next_contact=?,version=version+1,updated_at=? WHERE id=?',p.workflow,actor,p.workflow==='closed'?'':next,now,id);audit(actor,'attendance.followup:'+id,a.student_id);reconcile();return alertRead(actor,id);
   })},
-  async attendanceRecipients(actor,p={}){const f=filters(actor,p);return f.units.map(unit=>({unit,roles:ROLES.map(role=>({role,count:recipients(unit).filter(r=>r.role===role).length}))}))},
+  async attendanceRecipients(actor,p={}){const f=filters(actor,p);return f.units.map(unit=>({unit,roles:[...ROLES,'teacher'].map(role=>({role,count:recipients(unit,f.group_id).filter(r=>r.role===role).length}))}))},
   async deliverAttendanceNotices(){
    if(delivering)return;delivering=true;
    try{tx(reconcile);if(!env.RESEND_API_KEY||!env.MAIL_FROM)return;
     const due=all("SELECT n.*,a.unit,a.signal,a.workflow FROM attendance_notices n JOIN attendance_alerts a ON a.id=n.alert_id WHERE n.status IN ('pending','retry') AND n.next_attempt<=? ORDER BY n.next_attempt LIMIT 20",Date.now());
-    for(const n of due){const r=recipients(n.unit).find(r=>r.user_id===n.recipient_id);if(!r||n.signal!=='active'||n.workflow==='closed'){run("UPDATE attendance_notices SET status='cancelled',updated_at=? WHERE alert_id=? AND recipient_id=?",stamp(),n.alert_id,n.recipient_id);continue}
+    for(const n of due){const current=get('SELECT * FROM attendance_alerts WHERE id=?',n.alert_id),r=recipients(n.unit,current.group_id).find(r=>r.user_id===n.recipient_id);if(!r||current.signal!=='active'||current.workflow==='closed'){run("UPDATE attendance_notices SET status='cancelled',updated_at=? WHERE alert_id=? AND recipient_id=?",stamp(),n.alert_id,n.recipient_id);continue}
      const now=Date.now();if(n.first_attempt&&now-n.first_attempt>=23*3600000||n.attempts>=8){run("UPDATE attendance_notices SET status='review',updated_at=? WHERE alert_id=? AND recipient_id=?",stamp(),n.alert_id,n.recipient_id);continue}
+     const payload=n.payload||JSON.stringify({from:env.MAIL_FROM,to:[r.email],subject:'Frequência: acompanhamento de faltas — Luta pela Comunidade',text:'Há um alerta de '+policy.readAbsencePolicy().threshold+' ou mais faltas consecutivas sem justificativa em um núcleo sob sua responsabilidade.\nEntre no painel privado para consultar o aluno, conferir os lançamentos e combinar o contato acolhedor com a família.\n'+(env.PUBLIC_ORIGIN||env.RENDER_EXTERNAL_URL)+'/portal/#absence-attention-area\n\nA justificativa interrompe a sequência. Registros sem marcação não contam como falta. Este aviso não substitui o acompanhamento da equipe.'});
+     run('UPDATE attendance_notices SET payload=? WHERE alert_id=? AND recipient_id=?',payload,n.alert_id,n.recipient_id);
      run('UPDATE attendance_notices SET attempts=attempts+1,first_attempt=CASE WHEN first_attempt=0 THEN ? ELSE first_attempt END,next_attempt=?,updated_at=? WHERE alert_id=? AND recipient_id=?',now,now+300000,stamp(),n.alert_id,n.recipient_id);
-     let provider='';try{const response=await transport('https://api.resend.com/emails',{method:'POST',headers:{Authorization:'Bearer '+env.RESEND_API_KEY,'Content-Type':'application/json','Idempotency-Key':'attendance-'+n.alert_id+'-'+r.user_id},body:JSON.stringify({from:env.MAIL_FROM,to:[r.email],subject:'Frequência: acompanhamento de faltas — Luta pela Comunidade',text:'Há um alerta de '+policy.readAbsencePolicy().threshold+' ou mais faltas consecutivas sem justificativa em um núcleo sob sua responsabilidade.\nEntre no painel privado para consultar o aluno, conferir os lançamentos e combinar o contato acolhedor com a família.\n'+(env.PUBLIC_ORIGIN||env.RENDER_EXTERNAL_URL)+'/portal/#attendance-report-area\n\nA justificativa interrompe a sequência. Registros sem marcação não contam como falta. Este aviso não substitui o acompanhamento da equipe.'}),signal:AbortSignal.timeout(10000)});if(response.ok)provider=(await response.json()).id||''}catch{}
+     let provider='';try{const response=await transport('https://api.resend.com/emails',{method:'POST',headers:{Authorization:'Bearer '+env.RESEND_API_KEY,'Content-Type':'application/json','Idempotency-Key':'attendance-'+n.alert_id+'-'+r.user_id},body:payload,signal:AbortSignal.timeout(10000)});if(response.ok)provider=(await response.json()).id||''}catch{}
      run('UPDATE attendance_notices SET status=?,provider_id=?,next_attempt=?,updated_at=? WHERE alert_id=? AND recipient_id=?',provider?'accepted':'retry',provider,now+Math.min(3600000,300000*2**n.attempts),stamp(),n.alert_id,n.recipient_id);
     }
    }finally{delivering=false}

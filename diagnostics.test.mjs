@@ -66,7 +66,7 @@ test('Inscrição: gravação com quatro anexos e repetição sem duplicar após
 });
 
 test('Inscrição: zero ou parte dos anexos, pendência visível e complementação pela secretaria',async t=>{
- const f=await fixture(t);await f.store.provision('secretary@example.test','secretary');const token=await f.login('secretary@example.test');
+ const f=await fixture(t);await f.store.saveStaffAccount(f.admin.user_id,null,{name:'Secretaria Fictícia',email:'secretary@example.test',phone:'24999999999',role:'secretary',active:true,version:0,units:['amavale']});const token=await f.login('secretary@example.test');
  for(const keep of [[],['photo'],['studentDocument','medicalCertificate']]){
   const id=randomUUID(),form=registrationForm(id);
   for(const k of ['studentDocument','guardianDocument','medicalCertificate','photo'])if(!keep.includes(k))form.set(k,new File([],''));

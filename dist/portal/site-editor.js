@@ -71,7 +71,7 @@
    b.addEventListener('click',action(async()=>{if(dirty())throw Error('Salve ou descarte as alterações locais antes de recuperar uma versão.');collect(await api(endpoint('/restore'),{method:'POST',data:{version:doc.version,revision:r.id}}));draw();drawHistory();await preview();notice('Versão anterior recuperada como rascunho. Confira e publique para aplicá-la ao site.')}));row.append(b);target.append(row)}
  }
  function init(){
-  if(!me||!['admin','secretary'].includes(me.role)||$('site-editor-area'))return;
+  if(!me||me.role!=='admin'||$('site-editor-area'))return;
   if(!document.querySelector('link[href="/portal/site-editor.css"]'))document.head.append(el('link',undefined,{rel:'stylesheet',href:'/portal/site-editor.css'}));
   area=el('section',undefined,{id:'site-editor-area'});area.append(el('h2','Editar site'),el('p','Luta pela Comunidade · textos, imagens, links e perguntas de contato. Cada página tem seu próprio rascunho. Os cadastros e horários continuam nos seus painéis administrativos.'));
   const steps=el('ol',undefined,{class:'editor-progress'});for(const step of ['1. Escolha e edite','2. Salve o rascunho','3. Confira a prévia','4. Publique'])steps.append(el('li',step));area.append(steps);

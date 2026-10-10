@@ -7,6 +7,7 @@ async function fixture(t){
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'lpc-priorities-')),mail=[],env={PORTAL_DATA_DIR:dir,PORTAL_SECRET:'fake-test-only-'.repeat(4),BOOTSTRAP_ADMIN_EMAIL:'admin@example.test',PUBLIC_ORIGIN:'https://example.test',RESEND_API_KEY:'fake',MAIL_FROM:'test@example.test'};
  const transport=async(_,o)=>{mail.push(JSON.parse(o.body));return Response.json({id:randomUUID()})};let store=createSqliteStore(env,{transport});t.after(()=>{store.close();assert.ok(dir.startsWith(path.join(os.tmpdir(),'lpc-priorities-')));fs.rmSync(dir,{force:true,recursive:true})});
  const admin=(await store.members())[0].user_id,sec=(await store.provision('secretary@example.test','secretary')).user_id,guardian=(await store.provision('guardian@example.test','guardian')).user_id;
+ await store.saveStaffAccount(admin,sec,{name:'Secretaria Fictícia',email:'secretary@example.test',phone:'24999999999',role:'secretary',active:true,version:0,units:['amavale']});
  const teacher=(await store.saveTeacher(admin,null,{name:'Docente Fictício',email:'teacher@example.test',phone:'24999999999',status:'pending',test_access:true,units:['amavale'],version:0})).user_id;
  await store.import(admin,[{id:'UND1_000001',name:'Estudante Fictício',birth_date:'2018-01-01',status:'approved',version:0}]);
  const group=await store.saveGroup(admin,null,{unit:'amavale',label:'Turma Fictícia',weekdays:[0,1,2,3,4,5,6],start_time:'10:00',end_time:'11:00',active:true,students:['UND1_000001'],teachers:[teacher],version:0});

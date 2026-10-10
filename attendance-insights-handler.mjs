@@ -6,8 +6,12 @@ const names={present:'Presente',absent:'Faltou',justified:'Justificada',unmarked
 const units={amavale:'Amavale',valparaiso:'Valparaíso','vale-do-carangola':'Vale do Carangola'};
 const cols=o=>Object.entries(o).map(([key,label])=>({key,label,width:['name','class','recorded_by'].includes(key)?36:22}));
 export async function handleAttendanceInsights({req,route,method,url,store,actor}){
- if(!route.startsWith('/attendance-report')&&!route.startsWith('/attendance-alert')&&!route.startsWith('/rollcall'))return;
+ if(!route.startsWith('/attendance-report')&&!route.startsWith('/attendance-alert')&&!route.startsWith('/rollcall')&&!route.startsWith('/whatsapp-notices'))return;
  const p=Object.fromEntries(url.searchParams),body=async()=>{try{const p=await req.json();if(!p||typeof p!=='object'||Array.isArray(p))throw Error();return p}catch{fail('Dados inválidos.')}};
+ if(route==='/attendance-alerts/attention'&&method==='GET')return json(await store.absenceAttention(actor));
+ if(route==='/whatsapp-notices'&&method==='GET')return json({settings:await store.whatsappSettings(actor)});
+ if(route==='/whatsapp-notices'&&method==='PATCH')return json({settings:await store.saveWhatsappSettings(actor,await body()),message:'Configuração do WhatsApp salva. Trocar o número pausa os envios até a conexão ser conferida.'});
+ if(route==='/whatsapp-notices/recipient'&&method==='PATCH')return json({settings:await store.saveWhatsappRecipient(actor,await body()),message:'Preferência do destinatário salva.'});
  if(route==='/attendance-alerts/settings'&&method==='GET')return json({settings:await store.absencePolicy(actor)});
  if(route==='/attendance-alerts/settings/preview'&&method==='POST')return json(await store.previewAbsencePolicy(actor,await body()));
  if(route==='/attendance-alerts/settings'&&method==='PATCH')return json({settings:await store.saveAbsencePolicy(actor,await body()),message:'Regra de faltas salva; histórico recalculado.'});
