@@ -1,3 +1,5 @@
+import {Readable} from 'node:stream';
+import {pipeline} from 'node:stream/promises';
 import {observeRequest,handleClientDiagnostic} from './diagnostic-http.mjs';
 import {requestOrigin} from './request-origin.mjs';
 import {clientAddress} from './client-address.mjs';
@@ -17,9 +19,11 @@ await initializePortal(process.env);
 let attendanceJobRunning=false;
 async function attendanceJob(){if(attendanceJobRunning||!portalConfigured(process.env))return;attendanceJobRunning=true;try{const store=createStore(process.env);await store.deliverAttendanceNotices();await store.deliverRollcallNotices();await store.deliverAppointmentNotices();await store.deliverWhatsappNotices()}catch{console.error('Não foi possível concluir a verificação automática de frequência; nova tentativa em cinco minutos.')}finally{attendanceJobRunning=false}}
 setInterval(attendanceJob,300000).unref();setTimeout(attendanceJob,1000).unref();
+async function recoveryJob(){if(!portalConfigured(process.env))return;try{await createStore(process.env).backupTick()}catch{console.error('Backup não concluído. Confira o painel Backup e recuperação.')}}
+setInterval(recoveryJob,300000).unref();setTimeout(recoveryJob,15000).unref();
 async function serveRequest(req,res){
  let url;try{url=new URL(req.url,requestOrigin(req.headers.host,process.env))}catch{res.writeHead(400).end();return}
- const send=async response=>{let payload=Buffer.from(await response.arrayBuffer());const headers=Object.fromEntries(response.headers);if(response.status>=400&&headers['content-type']?.includes('application/json')){try{payload=Buffer.from(JSON.stringify({...JSON.parse(payload),support_id:req.headers['x-support-id']}));delete headers['content-length']}catch{}}res.writeHead(response.status,headers);res.end(payload)};
+ const send=async response=>{const headers=Object.fromEntries(response.headers);if(response.ok&&headers['x-backup-sha256']){res.writeHead(response.status,headers);await pipeline(Readable.fromWeb(response.body),res);return}let payload=Buffer.from(await response.arrayBuffer());if(response.status>=400&&headers['content-type']?.includes('application/json')){try{payload=Buffer.from(JSON.stringify({...JSON.parse(payload),support_id:req.headers['x-support-id']}));delete headers['content-length']}catch{}}res.writeHead(response.status,headers);res.end(payload)};
  if(url.pathname==='/api/diagnostics'){await handleClientDiagnostic(req,res,url,process.env);return;}
 
  if(['/api/contact','/api/contact/whatsapp','/api/contact/conversation'].includes(url.pathname)){await send(await handleContact(new Request(url,{method:req.method}),process.env));return;}
@@ -66,7 +70,7 @@ async function serveRequest(req,res){
   // One shared entry point also covers staff portals that do not load app.js.
   const page=url.pathname.replace(/index\.html$/,'');let source=await fs.promises.readFile(file,'utf8');
   if(portalConfigured(process.env)&&editorPages.some(p=>p.page===page)){source=createStore(process.env).editorPublicHtml(page);res.setHeader('Cache-Control','no-store');}
-  const html=withSocialPreview(source,page);res.end(html.replace(/<\/body>/i,'<script src="/contact-widget.js" defer></script>'+(/^\/(administracao|portal|professor|psicologia|assistencia-social)\//.test(url.pathname)?'<script src="/portal/diagnostics.js" defer></script><script src="/portal/site-editor.js" defer></script>':'')+'</body>'));
+  const html=withSocialPreview(source,page);res.end(html.replace(/<\/body>/i,'<script src="/contact-widget.js" defer></script>'+(/^\/(administracao|portal|professor|psicologia|assistencia-social)\//.test(url.pathname)?'<script src="/portal/diagnostics.js" defer></script><script src="/portal/site-editor.js" defer></script><script src="/portal/backups.js" defer></script>':'')+'</body>'));
  }else fs.createReadStream(file).pipe(res);
 }
 http.createServer((req,res)=>{const diagnostic=observeRequest(req,res,process.env);serveRequest(req,res).catch(error=>diagnostic.fail(error))}).listen(port,process.env.HOST||'0.0.0.0',function(){console.log(`Local: http://127.0.0.1:${this.address().port}`)});

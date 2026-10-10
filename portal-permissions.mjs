@@ -4,6 +4,7 @@ export const CARE_ROLES=['psychologist','social_worker'];
 // Functional boundary in addition to each resource's ownership/unit checks.
 // New endpoints are denied by default for restricted staff profiles.
 export function requireRouteAccess(role,route,method){
+ if(/^\/backups(?:\/|$)/.test(route)&&role!=='admin')fail('Esta operação exige a administração geral.',403);
  if(role==='secretary'){
   if(/^\/(staff-accounts|members|links|audit|site-editor|contact-settings|graduation-policy|diagnostics)(?:\/|$)/.test(route)||route==='/rollcall-settings'&&method!=='GET')fail('Esta operação exige a administração geral.',403);
   return;

@@ -1,0 +1,23 @@
+MISSÃO — LUTA PELA COMUNIDADE
+Atue como engenheiro de confiabilidade e segurança responsável por backup e recuperação de um portal educacional com SQLite, documentos privados, cadastros, turmas, chamadas e agenda. Trabalhe exclusivamente neste projeto.
+
+OBJETIVO
+Produzir e demonstrar recuperação completa, protegendo dados pessoais. Destinos autorizados: Google Drive institucional, computador da administração e, quando disponível, HD externo desconectado. Não substituir produção durante testes. Não afirmar risco zero nem considerar um arquivo gerado como recuperação comprovada.
+
+BASE TÉCNICA
+Consultar fontes primárias de SQLite Online Backup, CISA StopRansomware, Moodle Site Backup, GitLab Backup/Restore, Render Persistent Disks e Google Drive API. Diferenciar prática técnica, norma e política escolhida pela gestão. Registrar links e limitações; não inventar evidência científica.
+
+EXECUÇÃO
+1. Inventariar banco, arquivos referenciados, código, dependências, configuração, segredos e contas externas. Identificar o que está e o que não está incluído.
+2. Criar snapshot consistente do SQLite em uso. Validar integridade e vínculos; reunir documentos e código da mesma execução. Falhar explicitamente se algum arquivo obrigatório estiver ausente.
+3. Criptografar antes da transferência. Manter somente chave pública no servidor. Guardar a chave privada separadamente com duas cópias sob custódia institucional. Remover da cópia sessões e códigos de login sem alterar a base real.
+4. Registrar manifesto, SHA-256, versão do código, contagens e auditoria. Rejeitar arquivos alterados, pacotes incompletos, links e caminhos que escapem do destino.
+5. Disponibilizar painel exclusivo de administradores com frequência, geração, download, situação da cópia externa, falhas e relatório de recuperação. Alertar sem revelar dados de alunos ou credenciais.
+6. Usar API oficial do Drive com menor privilégio e credenciais fora do código. Conferir tamanho/checksum e repetição sem duplicar. Manter claro quando a autorização externa ainda não existe. Nunca confundir upload manual com automação ativada.
+7. Permitir cópia para HD com verificação de hash. Orientar desconexão e custódia separada das chaves. Definir retenção e capacidade; impedir que o backup esgote o disco de produção.
+8. Restaurar somente em diretório novo. Conferir banco, documentos, código e configuração; emitir relatório. Fazer ensaio funcional isolado, sem emails, WhatsApp, entrada pública ou escrita em produção. Medir tempo de extração separadamente do tempo para restabelecer todo o serviço.
+9. Testar sucesso, corrupção, chave errada, arquivos ausentes, WAL, concorrência, falta de autorização, repetição, falhas do Drive, bloqueio de sobrescrita e preservação da cópia anterior. Rodar a suíte completa e revisar efeitos nos módulos relacionados.
+10. Publicar somente o código revisado e testado. Verificar build, saúde, arquivos publicados e interface móvel/desktop. Entregar prova da cópia real e ensaio, instruções de recuperação e pendências operacionais específicas.
+
+CRITÉRIO DE ENTREGA
+Distinguir: implementado; publicado; configurado; cópia local conferida; cópia externa conferida; recuperação ensaiada; automação externa ativa; mídia offline disponível. Não atribuir 100% enquanto uma dessas etapas obrigatórias estiver pendente. Não enviar chaves privadas, tokens, documentos descriptografados ou conteúdo pessoal para logs, repositório ou conversa.

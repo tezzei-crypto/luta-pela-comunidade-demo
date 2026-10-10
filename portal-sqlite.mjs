@@ -1,3 +1,4 @@
+import {backupTools} from './backup-tools.mjs';
 import {whatsappNotices} from './whatsapp-notices.mjs';
 import {classEvidence} from './class-evidence.mjs';
 import {unitScope,scopedSecretaryStore} from './unit-scope.mjs';
@@ -202,6 +203,6 @@ export function createSqliteStore(env,{transport=fetch}={}){
    return limited[name](...args);
   }});
  };
- Object.assign(api,systemSync({db,get,requireRole,secret:env.PORTAL_SECRET}));
+ Object.assign(api,systemSync({db,get,requireRole,secret:env.PORTAL_SECRET}),backupTools({db,get,all,run,tx,requireRole,audit,env,transport}));
  return api;
 }
