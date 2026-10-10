@@ -4,6 +4,7 @@ import {Readable} from 'node:stream';
 import {createRecoveryPackage,publicKeyInfo,digestFile} from './backup-core.mjs';
 import {driveConfigured,uploadDriveBackup} from './backup-drive.mjs';
 import {fail} from './portal-domain.mjs';
+import {backupNotifications} from './backup-notices.mjs';
 
 export function backupTools({db,get,all,run,tx,requireRole,audit,env,transport=fetch}){
  const directory=path.join(path.resolve(env.PORTAL_DATA_DIR),'recovery-backups');let running=false;
@@ -16,6 +17,8 @@ export function backupTools({db,get,all,run,tx,requireRole,audit,env,transport=f
  const manager=actor=>requireRole(actor,['admin']);
  const publicSettings=()=>{const s=settings();return {configured:!!s.public_key,key_id:s.key_id,key_saved:!!s.key_saved,enabled:!!s.enabled,interval_hours:s.interval_hours,drive_folder:s.drive_folder,drive_connected:driveConfigured(env),version:s.version,updated_at:s.updated_at}};
  const records=()=>all('SELECT id,name,created_at,state,size,sha256,files,objects,key_id,commit_sha,drive_id,drive_verified_at,downloaded_at,verified_at,error FROM recovery_packages ORDER BY created_at DESC LIMIT 40');
+ const currentStatus=()=>{const packages=records(),latest=packages[0],last=get('SELECT created_at,state,error FROM recovery_runs ORDER BY id DESC LIMIT 1'),s=settings();return {settings:publicSettings(),running,last_run:last||null,packages,overdue:!latest||Date.now()-Date.parse(latest.created_at)>s.interval_hours*3600000+1800000,external_pending:!latest?.drive_verified_at,restore_pending:!packages.some(p=>p.verified_at&&p.key_id===s.key_id&&Date.now()-Date.parse(p.verified_at)<30*86400000)}};
+ const notifications=backupNotifications({db,get,all,run,env,transport,status:currentStatus});
  function recordFile(row){if(!row||!/^backup-[a-zA-Z0-9-]+\.lpcb$/.test(row.name))fail('Backup não localizado.',404);return path.join(directory,row.name)}
  async function generate(actor){
   if(actor)manager(actor);if(running)fail('Há um backup em execução.',409);const s=settings();if(!s.public_key||!s.key_saved)fail('Cadastre a chave pública e confirme a guarda da chave de recuperação.');
@@ -33,7 +36,8 @@ export function backupTools({db,get,all,run,tx,requireRole,audit,env,transport=f
   finally{running=false}
  }
  return {
-  backupStatus(actor){manager(actor);const packages=records(),latest=packages[0],last=get('SELECT created_at,state,error FROM recovery_runs ORDER BY id DESC LIMIT 1'),s=settings();return {settings:publicSettings(),running,last_run:last||null,packages,overdue:!latest||Date.now()-Date.parse(latest.created_at)>s.interval_hours*3600000+1800000,external_pending:!latest?.drive_verified_at,restore_pending:!packages.some(p=>p.verified_at&&p.key_id===s.key_id&&Date.now()-Date.parse(p.verified_at)<30*86400000)}},
+  backupStatus(actor){manager(actor);return {...currentStatus(),notifications:notifications.notificationStatus()}},
+  deliverBackupNotices:notifications.deliver,
   backupSettings(actor,p){return tx(()=>{manager(actor);const s=settings();if(!p||p.version!==s.version)fail('A configuração mudou. Atualize a tela.',409);if(typeof p.enabled!=='boolean'||![4,12,24].includes(p.interval_hours)||typeof p.drive_folder!=='string'||p.drive_folder&&!/^[a-zA-Z0-9_-]{10,160}$/.test(p.drive_folder))fail('Confira a frequência e a pasta do Drive.');
    const key=p.public_key?publicKeyInfo(p.public_key):{pem:s.public_key,fingerprint:s.key_id};if(!key.pem||p.key_saved!==true)fail('Confirme que a chave privada de recuperação está guardada separadamente.');
    run('UPDATE recovery_settings SET public_key=?,key_id=?,key_saved=1,enabled=?,interval_hours=?,drive_folder=?,version=version+1,updated_at=? WHERE id=1',key.pem,key.fingerprint,+p.enabled,p.interval_hours,p.drive_folder,new Date().toISOString());audit(actor,'backup.settings');return publicSettings();})},
