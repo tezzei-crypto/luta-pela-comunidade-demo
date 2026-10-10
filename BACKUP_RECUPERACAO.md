@@ -55,6 +55,12 @@ Política inicial sugerida, a validar com o tamanho real e a obrigação de rete
 
 Todos os dias: conferir execução recente e envio externo. Semanalmente: atualizar mídia offline e conferir hash. Mensalmente e após mudança importante: ensaio de recuperação. O painel alerta administradores para backup atrasado, última falha, cópia automática externa pendente e ausência de relatório de restauração nos últimos 30 dias com a chave atual. Esse aviso depende de o sistema estar disponível; monitoramento independente de indisponibilidade é uma camada adicional.
 
+### Emails de acompanhamento
+
+Com a rotina de backup ativada, administradores ativos recebem individualmente um resumo diário a partir das 8h de Brasília e alertas de falha na geração, atraso ou cópia externa pendente. O processo verifica a situação a cada cinco minutos e após a execução automática; uma falha manual é percebida na próxima verificação. Cada tipo de problema abre um incidente e não repete seu alerta enquanto permanecer aberto. Um problema novo, após resolução, abre outro incidente. O resumo informa quantos pacotes foram criados e confirmados no Drive nas últimas 24 horas, mesmo que a automação externa ainda esteja pendente.
+
+O email não contém dados de alunos, anexos ou chaves. A fila persiste no SQLite, revalida destinatários antes do envio, cancela alertas já resolvidos e usa conteúdo e chave de idempotência fixos nas novas tentativas. Atrasos de rede têm repetição limitada à janela de 23 horas; depois disso, exige conferência do provedor para evitar duplicação além da janela de 24 horas do Resend. Rejeições permanentes e confirmações ausentes aparecem no painel. "Aceito pelo serviço de email" não significa entregue ou lido. O mecanismo depende de servidor e Resend disponíveis e não substitui monitoramento externo de indisponibilidade total.
+
 ## Fontes primárias e fundamento
 
 Estas decisões se baseiam em práticas documentadas de engenharia e segurança, não em uma alegação de certificação científica.
@@ -67,3 +73,4 @@ Estas decisões se baseiam em práticas documentadas de engenharia e segurança,
 - Google, uploads: https://developers.google.com/workspace/drive/api/guides/manage-uploads
 - Google, acesso por arquivo: https://developers.google.com/workspace/drive/api/guides/api-specific-auth
 - Google, OAuth offline: https://developers.google.com/identity/protocols/oauth2/web-server#offline
+- Resend, idempotência e janela de 24 horas: https://resend.com/changelog/idempotency-keys

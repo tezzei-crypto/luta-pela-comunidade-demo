@@ -19,7 +19,8 @@ await initializePortal(process.env);
 let attendanceJobRunning=false;
 async function attendanceJob(){if(attendanceJobRunning||!portalConfigured(process.env))return;attendanceJobRunning=true;try{const store=createStore(process.env);await store.deliverAttendanceNotices();await store.deliverRollcallNotices();await store.deliverAppointmentNotices();await store.deliverWhatsappNotices()}catch{console.error('Não foi possível concluir a verificação automática de frequência; nova tentativa em cinco minutos.')}finally{attendanceJobRunning=false}}
 setInterval(attendanceJob,300000).unref();setTimeout(attendanceJob,1000).unref();
-async function recoveryJob(){if(!portalConfigured(process.env))return;try{await createStore(process.env).backupTick()}catch{console.error('Backup não concluído. Confira o painel Backup e recuperação.')}}
+let recoveryJobRunning=false;
+async function recoveryJob(){if(recoveryJobRunning||!portalConfigured(process.env))return;recoveryJobRunning=true;try{const store=createStore(process.env);try{await store.backupTick()}catch{console.error('Backup não concluído. Confira o painel Backup e recuperação.')}await store.deliverBackupNotices()}catch{console.error('Não foi possível conferir os avisos de backup. Consulte o painel.')}finally{recoveryJobRunning=false}}
 setInterval(recoveryJob,300000).unref();setTimeout(recoveryJob,15000).unref();
 async function serveRequest(req,res){
  let url;try{url=new URL(req.url,requestOrigin(req.headers.host,process.env))}catch{res.writeHead(400).end();return}

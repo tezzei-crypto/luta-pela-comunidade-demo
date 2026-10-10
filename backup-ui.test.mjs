@@ -10,3 +10,5 @@ test('painel distingue Drive pendente, preserva formulário com erro e exige nov
  u.w.me=null;d.dispatchEvent(new u.w.Event('portal:logout'));assert.equal(d.getElementById('backup-area'),null);assert.equal(d.getElementById('backup-attention'),null);
 });
 test('perfis restritos não carregam nem exibem backups',async t=>{const u=ui(t,'teacher');await u.start();assert.equal(u.w.calls.length,0);assert.equal(u.w.document.getElementById('backup-area'),null)});
+
+test('painel informa destinatários, horário e confirmação real dos avisos por email',async t=>{const u=ui(t);u.w.data.notifications={configured:true,recipients:['admin@example.test'],pending:1,unconfirmed:2,last_accepted:{accepted_at:'2026-10-10T11:00:00Z'}};u.w.data.external_pending=false;u.w.data.restore_pending=false;await u.start();const text=u.w.document.getElementById('backup-content').textContent;assert.match(text,/Resumo diário às 8h/);assert.match(text,/admin@example.test/);assert.match(text,/aceito pelo serviço/);assert.match(text,/não comprova entrega/);assert.match(u.w.document.getElementById('backup-attention').textContent,/email sem confirmação/)});

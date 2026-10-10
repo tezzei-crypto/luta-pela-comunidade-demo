@@ -1,8 +1,8 @@
 'use strict';
 function backupAttention(result){
- if(!me||me.role!=='admin')return;let banner=$('backup-attention');const issue=result.settings.configured&&(result.overdue||result.external_pending||result.restore_pending||result.last_run?.state==='failed');
+ if(!me||me.role!=='admin')return;let banner=$('backup-attention');const mailIssue=result.notifications&&(!result.notifications.configured||result.notifications.unconfirmed>0);const issue=result.settings.configured&&(result.overdue||result.external_pending||result.restore_pending||result.last_run?.state==='failed'||mailIssue);
  if(!issue){banner?.remove();return}if(!banner){banner=el('div',undefined,{id:'backup-attention',class:'form-error',role:'status',style:'padding:12px;margin:12px 0;border-left:5px solid #a66b00'});$('workspace').before(banner)}
- const text=result.last_run?.state==='failed'?'A última tentativa de backup falhou.':result.overdue?'O backup precisa ser atualizado.':result.external_pending?'A cópia automática mais recente no Drive está pendente.':'É necessário testar a recuperação do backup.';
+ const text=result.last_run?.state==='failed'?'A última tentativa de backup falhou.':result.overdue?'O backup precisa ser atualizado.':result.external_pending?'A cópia automática mais recente no Drive está pendente.':mailIssue?'Há avisos de backup por email sem confirmação.':'É necessário testar a recuperação do backup.';
  if(banner.dataset.message!==text){banner.dataset.message=text;const link=el('a','Abrir Backup e recuperação',{href:'#backup-area'});link.addEventListener('click',()=>{if(typeof showPanel==='function')showPanel('backup-area')});banner.replaceChildren(el('strong','Proteção dos dados: '+text+' '),link)}
 }
 async function loadBackups(){
@@ -11,6 +11,11 @@ async function loadBackups(){
  const state=result.running?'Backup em execução.':result.overdue?'Atenção: ainda não há um backup recente.':'Backup recente disponível.';
  box.append(el('p',state,{role:'status',class:result.overdue?'form-error':'form-success'}),el('p',result.external_pending?'Envio automático ao Drive: cópia mais recente ainda não confirmada.':'Cópia mais recente conferida no Drive.'),el('p',result.restore_pending?'Restauração: registre um teste nos últimos 30 dias com a chave atual.':'Restauração: relatório recente registrado pela administração.'));
  if(result.last_run?.state==='failed')box.append(el('p',result.last_run.error,{role:'alert',class:'form-error'}));
+ if(result.notifications){const n=result.notifications;box.append(el('h3','Avisos aos administradores'),el('p','Resumo diário às 8h, horário de Brasília, e alertas de falha, atraso ou cópia externa pendente. Verificação a cada cinco minutos; o mesmo problema não gera um novo alerta a cada verificação.'),el('p','Destinatários: '+(n.recipients.join(', ')||'nenhum administrador ativo com email válido.')));
+  box.append(el('p',!n.configured?'Email não configurado. Os avisos permanecem neste painel.':n.last_accepted?'Último aviso aceito pelo serviço de email: '+new Date(n.last_accepted.accepted_at).toLocaleString('pt-BR')+'.':'Email configurado; aguardando a primeira confirmação do provedor.'));
+  if(n.pending||n.unconfirmed)box.append(el('p',`${n.pending} aviso(s) aguardando confirmação; ${n.unconfirmed} envio(s) exigem conferência no provedor.`,{class:'form-error'}));
+  box.append(el('p','Aceitação do email não comprova entrega ou leitura. Estes avisos dependem do servidor e do serviço de email estarem disponíveis.'));
+ }
  box.append(el('p','O pacote inclui banco de dados, documentos, fotos, conteúdo do site, código e configuração. Sessões e códigos de login são removidos da cópia. A chave privada é necessária para recuperar os dados.'));
  const generate=el('button',result.running?'Gerando backup…':'Gerar backup criptografado agora',{type:'button'});generate.disabled=result.running||!s.configured;generate.addEventListener('click',action(async()=>{notice('Gerando e verificando o backup. Mantenha esta página aberta.');await api('/backups',{method:'POST',data:{}});await loadBackups();notice('Backup criado. Confira os estados da cópia externa e da restauração.')}));box.append(generate);
  const policy=el('details');policy.open=!s.configured;policy.append(el('summary','Configurar proteção e frequência'));
