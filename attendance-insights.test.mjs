@@ -86,8 +86,8 @@ test('Relatórios e contatos: responsáveis e professores bloqueados; profission
  for(const user of [f.teacher,f.guardian]){const token=await f.login(user.email);for(const url of ['/attendance-report/options','/attendance-alerts','/attendance-alerts/'+a.id,'/attendance-report.xlsx?from='+f.dates[0]+'&to='+f.dates[7]])assert.equal((await f.request(token,url)).status,403)}
  const token=await f.login(care.email);assert.equal((await f.request(token,'/attendance-alerts/'+a.id)).status,200);assert.equal((await f.request(token,'/attendance-report?unit=valparaiso&from='+f.dates[0]+'&to='+f.dates[7])).status,403);assert.equal((await f.request(token,'/rollcall-issues')).status,403);assert.equal((await f.store.attendanceAlerts(other.user_id)).length,0);await assert.rejects(f.store.attendanceAlert(other.user_id,a.id),{status:403});
 });
-test('Avisos duráveis para quatro perfis, sem alunos no email e sem repetição na quarta falta',async t=>{
- const f=await fixture(t);await f.care('psychologist');await f.care('social_worker');await f.care('psychologist','valparaiso');for(let i=0;i<3;i++)await f.lesson(i,'absent');f.reopen();await f.store.deliverAttendanceNotices();assert.equal(f.mail.length,4);assert.ok(f.mail.every(m=>m.to.length===1&&!m.text.includes('Aluno Alfa')));assert.equal(new Set(f.mail.map(m=>m.key)).size,4);await f.lesson(3,'absent');await f.store.deliverAttendanceNotices();assert.equal(f.mail.length,4);const a=(await f.store.attendanceAlerts(f.admin.user_id))[0];assert.equal((await f.store.attendanceAlert(f.admin.user_id,a.id)).notifications.filter(n=>n.status==='accepted').length,4);
+test('Avisos duráveis para cinco perfis, sem alunos no email e sem repetição na quarta falta',async t=>{
+ const f=await fixture(t);await f.care('psychologist');await f.care('social_worker');await f.care('psychologist','valparaiso');for(let i=0;i<3;i++)await f.lesson(i,'absent');f.reopen();await f.store.deliverAttendanceNotices();assert.equal(f.mail.length,5);assert.ok(f.mail.every(m=>m.to.length===1&&!m.text.includes('Aluno Alfa')));assert.equal(new Set(f.mail.map(m=>m.key)).size,5);await f.lesson(3,'absent');await f.store.deliverAttendanceNotices();assert.equal(f.mail.length,5);const a=(await f.store.attendanceAlerts(f.admin.user_id))[0];assert.equal((await f.store.attendanceAlert(f.admin.user_id,a.id)).notifications.filter(n=>n.status==='accepted').length,5);
 });
 test('Revogação de acesso e correção da falta cancelam avisos ainda não enviados',async t=>{
  const f=await fixture(t);const p=await f.care('psychologist');const classes=[];for(let i=0;i<3;i++)classes.push(await f.lesson(i,'absent'));await f.store.setMember(f.admin.user_id,p.user_id,'psychologist',false);await f.store.markAttendance(f.admin.user_id,classes[1].id,[{id:f.pupils[0].id,status:'justified',version:1}]);await f.store.deliverAttendanceNotices();assert.equal(f.mail.length,0);
@@ -96,7 +96,7 @@ test('Acompanhamento auditado, persistente e protegido contra sobrescrita concor
  const f=await fixture(t);for(let i=0;i<3;i++)await f.lesson(i,'absent');const a=(await f.store.attendanceAlerts(f.admin.user_id))[0],p={version:a.version,workflow:'attempted',channel:'phone',outcome:'no_reply',note:'Contato fictício sem resposta',next_contact:localDay()};await f.store.attendanceFollowup(f.sec.user_id,a.id,p);await assert.rejects(f.store.attendanceFollowup(f.admin.user_id,a.id,p),{status:409});f.reopen();const saved=await f.store.attendanceAlert(f.admin.user_id,a.id);assert.equal(saved.owner_email,f.sec.email);assert.equal(saved.history.length,1);assert.equal(saved.history[0].note,p.note);assert.equal(saved.workflow,'attempted');
 });
 test('Chamada pendente: prazo de uma hora, ocorrência única, email e resolução automática',async t=>{
- const f=await fixture(t),clock=new Date(localDay()+'T17:01:00-03:00');f.store.checkRollcalls(new Date(localDay()+'T16:59:00-03:00'));let db=new DatabaseSync(path.join(f.dir,'portal.sqlite'));assert.equal(db.prepare('SELECT count(*) n FROM rollcall_issues').get().n,0);f.store.checkRollcalls(clock);let issues=db.prepare('SELECT * FROM rollcall_issues').all();assert.equal(issues.length,1);assert.equal(issues[0].expected,2);f.store.checkRollcalls(clock);assert.equal(db.prepare('SELECT count(*) n FROM rollcall_issues').get().n,1);
+ const f=await fixture(t),clock=new Date(localDay()+'T17:01:00-03:00');f.store.checkRollcalls(new Date(localDay()+'T15:59:00-03:00'));let db=new DatabaseSync(path.join(f.dir,'portal.sqlite'));assert.equal(db.prepare('SELECT count(*) n FROM rollcall_issues').get().n,0);f.store.checkRollcalls(clock);let issues=db.prepare('SELECT * FROM rollcall_issues').all();assert.equal(issues.length,1);assert.equal(issues[0].expected,2);f.store.checkRollcalls(clock);assert.equal(db.prepare('SELECT count(*) n FROM rollcall_issues').get().n,1);
  const c=await f.store.createClass(f.teacher.user_id,{group_id:f.group.id,day:localDay()});await f.store.markAttendance(f.teacher.user_id,c.id,f.pupils.slice(0,2).map(s=>({id:s.id,status:'present',version:0})));f.store.checkRollcalls(clock);assert.equal(db.prepare('SELECT status FROM rollcall_issues WHERE id=?').get(issues[0].id).status,'resolved');db.close();
 });
 test('Excel válido em ZIP OOXML: texto literal, Unicode, células numéricas e sem fórmulas injetadas',()=>{
@@ -197,7 +197,7 @@ test('Servidor sem email mantém a pendência visível sem afirmar envio',async 
 test('Prazo inicial de 12 horas atravessa a meia-noite e não envia lembrete antecipado',async t=>{
  const f=await fixture(t,{keepDefaultPolicy:true}),p=await f.store.rollcallSettings(f.admin.user_id);assert.equal(p.grace_minutes,720);
  const before=new Date(localDay()+'T23:59:00-03:00');await f.store.deliverRollcallNotices(before);assert.equal(f.mail.length,0);
- assert.equal((await f.store.rollcallIssues(f.teacher.user_id,{},before)).length,0);
+ const early=await f.store.rollcallIssues(f.teacher.user_id,{},before);assert.equal(early.length,1);assert.equal(early[0].within_grace,true);assert.equal(early[0].notifications.length,0);
  const nextDay=new Date(+new Date(localDay()+'T12:00:00Z')+86400000).toISOString().slice(0,10);
  const boundary=new Date(nextDay+'T04:00:00-03:00');await f.store.deliverRollcallNotices(boundary);assert.equal(f.mail.length,0);
  assert.equal((await f.store.rollcallIssues(f.teacher.user_id,{},boundary)).length,1);
@@ -213,4 +213,33 @@ test('Nova tentativa preserva o conteúdo enviado mesmo com progresso parcial da
  const c=await f.store.createClass(f.teacher.user_id,{group_id:f.group.id,day:localDay()});await f.store.markAttendance(f.teacher.user_id,c.id,[{id:f.pupils[0].id,status:'present',version:0}]);
  failed=false;await f.store.deliverRollcallNotices(new Date(+clock+300000));const after=f.mail.filter(m=>m.to[0]===f.teacher.email).at(-1);
  assert.equal(after.key,before.key);assert.equal(after.text,before.text);
+});
+
+
+test('Aviso de faltas: professor limitado à turma, profissionais ao núcleo e secretaria geral aos três',async t=>{
+ const f=await fixture(t),psy=await f.care('psychologist'),other=await f.care('social_worker','valparaiso');
+ for(let i=0;i<3;i++){await f.lesson(i,'absent');await f.lesson(i,'absent',f.other)}
+ for(const u of [f.admin,f.sec,psy])assert.equal((await f.store.absenceAttention(u.user_id)).alerts.length,2);
+ const own=await f.store.absenceAttention(f.teacher.user_id);assert.equal(own.alerts.length,1);assert.equal(own.alerts[0].group_id,f.group.id);assert.equal('contact' in own.alerts[0],false);assert.equal('history' in own.alerts[0],false);
+ assert.equal((await f.store.absenceAttention(other.user_id)).alerts.length,0);
+ await assert.rejects(f.store.absenceAttention(f.guardian.user_id),{status:403});
+ const token=await f.login(f.teacher.email);const response=await f.request(token,'/attendance-alerts/attention');assert.equal(response.status,200);assert.equal((await response.json()).alerts.length,1);
+ await f.store.saveGroup(f.admin.user_id,f.group.id,{...f.data,teachers:[],version:(await f.store.group(f.admin.user_id,f.group.id)).version});
+ assert.equal((await f.store.absenceAttention(f.teacher.user_id)).alerts.length,0);
+ f.mail.length=0;await f.store.deliverAttendanceNotices();assert.equal(f.mail.filter(m=>m.to[0]===f.teacher.email).length,0);
+});
+
+test('Aviso visual de faltas encerra por correção, retorno ou providência encerrada; histórico permanece',async t=>{
+ const f=await fixture(t);for(let i=0;i<3;i++)await f.lesson(i,'absent');let a=(await f.store.attendanceAlerts(f.admin.user_id))[0];
+ assert.equal((await f.store.absenceAttention(f.sec.user_id)).alerts.length,1);
+ await f.store.attendanceFollowup(f.sec.user_id,a.id,{version:a.version,workflow:'closed',channel:'internal',outcome:'other',note:'Conferência fictícia concluída'});
+ assert.equal((await f.store.absenceAttention(f.teacher.user_id)).alerts.length,0);await f.store.deliverAttendanceNotices();assert.equal(f.mail.length,0);
+ assert.equal((await f.store.attendanceAlert(f.admin.user_id,a.id)).history.length,1);
+ await f.lesson(3,'present');assert.equal((await f.store.attendanceAlerts(f.admin.user_id))[0].signal,'returned');
+});
+
+test('Email de faltas mantém o mesmo conteúdo em nova tentativa mesmo após mudança de limite',async t=>{
+ const f=await fixture(t,{transport:async()=>{throw Error('timeout')}});for(let i=0;i<4;i++)await f.lesson(i,'absent');await f.store.deliverAttendanceNotices();const before=f.mail.find(m=>m.to[0]===f.teacher.email);assert.ok(before);
+ const policy=await f.store.absencePolicy(f.admin.user_id),preview=await f.store.previewAbsencePolicy(f.admin.user_id,{threshold:4,version:policy.version});await f.store.saveAbsencePolicy(f.admin.user_id,{threshold:4,version:policy.version,preview_token:preview.preview_token,reason:'Mudança fictícia de critério'});
+ const db=new DatabaseSync(path.join(f.dir,'portal.sqlite'));db.exec('UPDATE attendance_notices SET next_attempt=0');db.close();await f.store.deliverAttendanceNotices();const after=f.mail.filter(m=>m.to[0]===f.teacher.email).at(-1);assert.equal(after.key,before.key);assert.equal(after.text,before.text);
 });

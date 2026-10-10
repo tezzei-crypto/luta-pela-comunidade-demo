@@ -9,6 +9,7 @@ import {createSqliteStore} from './portal-sqlite.mjs';
 import {handlePortal} from './portal-handler.mjs';
 import {ADMIN_UNITS} from './unit-scope.mjs';
 import sharp from 'sharp';
+import {localDay} from './professional-tools.mjs';
 const day=new Date(Date.now()+3*86400000).toISOString().slice(0,10);
 const account=(email,units,extra={})=>({name:'Secretaria Fictícia',email,phone:'24999999999',role:'secretary',active:true,version:0,units,...extra});
 async function fixture(t){
@@ -103,7 +104,7 @@ test('Núcleos: agenda presencial e online usa núcleo do atendimento, preserva 
 test('Núcleos: lembretes e alertas não incluem secretarias de outras unidades e revogação cancela fila',async t=>{
  const f=await fixture(t),clock=new Date(new Date().toISOString().slice(0,10)+'T23:30:00-03:00');await f.store.checkRollcalls(clock);
  const rows=f.db.prepare("SELECT i.unit,m.user_id FROM rollcall_notices n JOIN rollcall_issues i ON i.id=n.issue_id JOIN members m ON m.user_id=n.recipient_id WHERE m.role='secretary' AND n.status='pending'").all();
- assert.equal(rows.length,3);for(const r of rows)assert.equal(f.secretaries[ADMIN_UNITS.indexOf(r.unit)].user_id,r.user_id);
+ assert.equal(new Set(rows.map(r=>r.unit)).size,3);for(const r of rows)assert.equal(f.secretaries[ADMIN_UNITS.indexOf(r.unit)].user_id,r.user_id);
  const recipients=await f.store.attendanceRecipients(f.admin.user_id);for(const r of recipients)assert.equal(r.roles.find(x=>x.role==='secretary').count,1);
  const sec=f.secretaries[0];await f.store.saveStaffAccount(f.admin.user_id,sec.user_id,{...sec,units:['valparaiso']});await f.store.checkRollcalls(clock);
  assert.equal(f.db.prepare("SELECT count(*) AS n FROM rollcall_notices n JOIN rollcall_issues i ON i.id=n.issue_id WHERE i.unit='amavale' AND n.recipient_id=? AND n.status IN ('pending','retry','sending')").get(sec.user_id).n,0);
@@ -111,7 +112,7 @@ test('Núcleos: lembretes e alertas não incluem secretarias de outras unidades 
 
 test('Núcleos: fotos privadas, revisão e política de faltas respeitam escopo após integração',async t=>{
  const f=await fixture(t),bytes=await sharp({create:{width:8,height:8,channels:3,background:'#f4c'}}).png().toBuffer();
- const uploaded=[];
+ const uploaded=[];f.db.prepare('UPDATE classes SET day=?').run(new Date(+new Date(localDay()+'T12:00:00Z')-86400000).toISOString().slice(0,10));
  for(let b=0;b<3;b++)uploaded.push(await f.store.addClassPhoto(f.admin.user_id,f.classes[b].id,bytes,{request_id:randomUUID(),caption:'Foto fictícia',version:0,mime:'image/png'}));
  for(let a=0;a<3;a++)for(let b=0;b<3;b++){
   const sec=f.secretaries[a],base='/classes/'+f.classes[b].id+'/photos',expected=a===b?200:403;

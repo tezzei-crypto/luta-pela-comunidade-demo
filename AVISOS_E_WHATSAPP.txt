@@ -1,0 +1,31 @@
+PROMPT DE EXECUÇÃO — LUTA PELA COMUNIDADE
+
+Atue como equipe de engenharia de software, experiência do usuário e gestão escolar. Trabalhe exclusivamente no Luta pela Comunidade. Entregue avisos claros, com ação direta e atualizados a partir dos registros persistentes. Preserve os dados reais e a separação entre os três núcleos.
+
+1. Chamadas: após o término da aula, exiba um aviso persistente para professor vinculado, secretaria autorizada e administradores. Mostre turma, núcleo, data e quantidade de marcações. Diferencie prazo de 12 horas de atraso. Não marque ausências automaticamente. Ação direta para concluir a chamada. Retire o aviso quando todas as marcações forem salvas ou a aula for cancelada com motivo. Emails só após o prazo e respeitando pausa noturna, limite e deduplicação existentes.
+2. Faltas: três faltas consecutivas sem justificativa na mesma turma geram acompanhamento, conforme o limite configurado pela administração. Presença, justificativa ou registro desconhecido interrompem a sequência; cancelamentos são excluídos. Não diagnostique evasão, risco clínico ou negligência. Notifique professor vinculado, psicologia e assistência social habilitadas no núcleo, secretaria do núcleo, secretaria geral com escopo nos três núcleos e administradores. Uma secretaria geral é uma conta explicitamente autorizada em todos os núcleos, sem privilégio implícito. Professores recebem apenas evidências da própria turma, sem contatos familiares ou anotações de acompanhamento. Emails não contêm dados identificadores de alunos. A quarta falta atualiza a ocorrência, sem duplicar o email do mesmo episódio. O aviso sai após retorno, correção, inatividade ou encerramento justificado do acompanhamento; o histórico fica preservado.
+3. Interface: aviso destacado com número, texto e ação; sem piscar, tocar som ou tomar o foco. Avisos presentes em todos os painéis autorizados. Atualização independente a cada 20 segundos quando a aba está visível, ao retornar e após salvar; recuo progressivo em falhas. Não substituir rascunhos. Em falha, indicar resultado desatualizado; nunca afirmar que tudo foi resolvido. Informar mudanças por região acessível, sem repetir anúncios idênticos.
+4. WhatsApp: preparar número remetente editável, ativação explícita e autorização por destinatário. Começar pausado. Trocar o número pausa os envios. Exigir conexão oficial correspondente ao número, token no servidor e modelo aprovado sem dados de alunos. Uma mensagem por ocorrência e pessoa. Rever autorização, vínculo e resolução imediatamente antes do envio. Persistir o resultado. Resposta incerta exige conferência; não reenviar cegamente. Não confundir aceitação pela Meta com entrega ou leitura. Não ativar nem comprar serviço sem a conexão e a definição operacional.
+5. Validar: sucesso, falha, repetição, concorrência, prazo atravessando meia-noite, cancelamento, correção, revogação de núcleo, papéis restritos, logout durante requisição, rascunho e uso em celular. Testes fictícios e isolados. Conferir build, saúde e interface publicada. Não lançar chamadas reais como teste.
+
+FUNDAMENTAÇÃO E LIMITES
+- W3C/WAI, Alert Pattern: mensagens importantes sem interromper foco, evitar interrupções frequentes. O aviso não some por cronômetro; some quando a obrigação deixa de existir.
+  https://www.w3.org/WAI/ARIA/apg/patterns/alert/
+- W3C/WAI, Status Messages: comunicar mudanças sem exigir mudança de foco.
+  https://www.w3.org/WAI/WCAG21/Understanding/status-messages.html
+- Franklin University, Canvas Dashboard for Instructors: lista de tarefas, notificações e acesso a trabalho pendente no painel docente. Referência de desenho de portal universitário, não ensaio de eficácia desta interface.
+  https://support.franklin.edu/hc/en-us/articles/360041637193-How-to-Use-Canvas-Dashboard-for-Instructors
+- IES: alertas precoces, qualidade dos dados e apoio às famílias; estudo randomizado de mensagens em escolas. Resultados de escolas americanas não provam eficácia deste sistema ou de um limite de três faltas no jiu-jitsu. O limite é uma regra da gestão.
+  https://ies.ed.gov/use-work/evaluations/impact-evaluation-parent-messaging-strategies-student-attendance
+  https://ies.ed.gov/use-work/supporting-recovery-with-evidence-based-practices/chronic-absenteeism
+- OWASP: menor privilégio, autorização por recurso e testes de acesso.
+  https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html
+- Meta: modelos oficiais e política de mensagens.
+  https://whatsapp.github.io/WhatsApp-Nodejs-SDK/api-reference/messages/template/
+  https://business.whatsapp.com/policy
+  https://business.whatsapp.com/products/platform-pricing
+
+ATIVAÇÃO FUTURA DO WHATSAPP (RESPONSÁVEL TÉCNICO)
+Configurar no servidor: WHATSAPP_ACCESS_TOKEN, WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_API_VERSION, WHATSAPP_TEMPLATE, WHATSAPP_LANGUAGE e WHATSAPP_SENDER_PHONE. Usar a versão vigente suportada pela Meta; WHATSAPP_SENDER_PHONE deve ser exatamente o número cadastrado no painel, em formato +55DDDNUMERO. Nunca colocar tokens no repositório, no navegador ou em mensagens.
+Criar e aprovar modelo sem variáveis, por exemplo: "Luta pela Comunidade: há uma pendência de chamada ou acompanhamento de frequência para você. Consulte seu painel privado: https://www.lutapelacomunidade.com.br/portal/ . Se já resolveu, confira a situação atual no painel."
+Registrar somente números e autorizações confirmados dos destinatários; conectar o número oficial, fazer teste autorizado e então ativar. A tarefa automática verifica pendências a cada cinco minutos. Chamadas respeitam o prazo e a pausa noturna; avisos de faltas seguem a identificação da ocorrência. Um aceite de API não comprova entrega ou leitura. Falha ou resultado incerto aparece no histórico e exige conferência; nesta versão não há reenvio manual nem confirmação por webhook.

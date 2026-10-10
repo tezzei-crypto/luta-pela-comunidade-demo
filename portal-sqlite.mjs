@@ -1,3 +1,4 @@
+import {whatsappNotices} from './whatsapp-notices.mjs';
 import {classEvidence} from './class-evidence.mjs';
 import {unitScope,scopedSecretaryStore} from './unit-scope.mjs';
 import {appointmentNotices} from './appointment-notices.mjs';
@@ -98,6 +99,7 @@ export function createSqliteStore(env,{transport=fetch}={}){
   ...diagnostics({db,get,all,run,tx,requireRole,scope,audit}),
   ...contactSettings({db,get,run,tx,requireRole,audit}),...insights,...rollcalls,...staffAccounts({db,get,all,run,tx,requireRole,scope,audit}),...project,...evidence,...teaching,...professionals,...scheduling,...workforceTools({db,get,all,run,tx,requireRole,scope,audit}),...studentDetails({db,get,all,run,tx,requireRole,scope,audit}),
   ...agendaNotices,
+  ...whatsappNotices({db,get,all,run,tx,requireRole,audit,env,transport,targets:()=>[...insights.absenceWhatsappTargets(),...rollcalls.rollcallWhatsappTargets()]}),
   async sendBookingNotice(actor,id){await scheduling.booking(actor,id);await agendaNotices.sendPrivateNotice(id)},
   close:()=>db.close(),
   async requestCode(email){

@@ -32,7 +32,8 @@ export function rollcallTools({db,get,all,run,tx,requireRole,scope,audit,env,tra
   for(const g of all('SELECT * FROM class_groups'))for(const day of dates){
    const old=get('SELECT * FROM rollcall_issues WHERE group_id=? AND day=?',g.id,day),weekday=new Date(day+'T12:00:00Z').getUTCDay(),deadline=+new Date(day+'T'+g.end_time+':00-03:00')+p.grace_minutes*60000;
    if(!old&&g.created_day&&day<g.created_day&&!get('SELECT 1 FROM classes WHERE group_id=? AND day=?',g.id,day))continue;
-   if(!old&&(!p.enabled||!g.active||!JSON.parse(g.weekdays).includes(weekday)||now<deadline))continue;
+   // Show the task when the lesson ends; grace delays email and the overdue state.
+   if(!old&&(!p.enabled||!g.active||!JSON.parse(g.weekdays).includes(weekday)||now<+new Date(day+'T'+g.end_time+':00-03:00')))continue;
    const c=get('SELECT * FROM classes WHERE group_id=? AND day=?',g.id,day),assigned=teachers(g);
    const roster=c?all('SELECT student_id FROM class_students WHERE class_id=?',c.id):all("SELECT gs.student_id FROM group_students gs JOIN students s ON s.id=gs.student_id WHERE gs.group_id=? AND s.status='approved'",g.id);
    const marked=c?Number(get("SELECT count(*) AS n FROM attendance a JOIN class_students cs ON cs.class_id=a.class_id AND cs.student_id=a.student_id WHERE a.class_id=? AND a.status<>'unmarked'",c.id).n):0;
@@ -59,6 +60,7 @@ export function rollcallTools({db,get,all,run,tx,requireRole,scope,audit,env,tra
  let delivering=false;
  return {
   rollcallReconcile:reconcile,
+  rollcallWhatsappTargets(){const clock=new Date(),p=policy();tx(()=>reconcile(clock));if(!p.enabled||quiet(p,clock))return [];return all("SELECT * FROM rollcall_issues WHERE status='open'").filter(i=>+clock>=+new Date(i.day+'T'+get('SELECT end_time FROM class_groups WHERE id=?',i.group_id).end_time+':00-03:00')+p.grace_minutes*60000).flatMap(i=>recipients(get('SELECT * FROM class_groups WHERE id=?',i.group_id),i.day,{...p,teacher_email:true,manager_email:true}).map(m=>({kind:'rollcall',issue_id:i.id,user_id:m.user_id})))},
   checkRollcalls:clock=>tx(()=>reconcile(clock)),
   async rollcallSettings(actor){return settings(actor)},
   async saveRollcallSettings(actor,input){return tx(()=>{

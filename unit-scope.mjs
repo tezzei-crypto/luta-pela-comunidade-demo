@@ -48,7 +48,7 @@ export function scopedSecretaryStore(api,actor,{scope,get,all}) {
  };
  const rules={};
  const allow=(names,check=()=>{})=>{for(const n of names.split(' '))rules[n]=async(...args)=>{check(...args);return api[n](...args)}};
- allow('systemRevision audit rollcallSettings absencePolicy attendanceReport attendanceReportOptions attendanceAlerts attendanceAlert attendanceFollowup attendanceRecipients rollcallIssues');
+ allow('systemRevision audit rollcallSettings absencePolicy absenceAttention attendanceReport attendanceReportOptions attendanceAlerts attendanceAlert attendanceFollowup attendanceRecipients rollcallIssues');
  allow('links',id=>{if(id!==actor)deny()});
  allow('member',id=>{if(id!==actor)deny()});
  rules.availableUnits=async()=>scope.units(actor);
