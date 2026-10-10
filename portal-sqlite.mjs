@@ -66,6 +66,7 @@ export function createSqliteStore(env,{transport=fetch}={}){
  function objectPath(key){if(typeof key!=='string'||!key||key.split('/').some(p=>!p||p==='.'||p==='..'||!/^[a-zA-Z0-9_.-]+$/.test(p)))fail('Arquivo inválido.');const full=path.resolve(objects,...key.split('/'));if(!full.startsWith(objects+path.sep))fail('Arquivo inválido.');return full}
  const scope=unitScope({db,get,all,requireRole});
  const teaching=teacherTools({db,get,all,run,tx,requireRole,scope,audit});
+ const staff=staffAccounts({db,get,all,run,tx,requireRole,scope,audit});
  let insights,rollcalls;
  const project=projectTools({db,get,all,run,tx,requireRole,scope,audit,requireUnit:teaching.requireUnit,onAttendanceChanged:()=>{insights?.attendanceReconcile();rollcalls?.rollcallReconcile()}});
  const evidence=classEvidence({db,get,all,run,tx,requireRole,audit,objectPath,lessonAccess:project.lessonAccess});
@@ -73,7 +74,7 @@ export function createSqliteStore(env,{transport=fetch}={}){
  const scheduling=schedulingTools({db,get,all,run,tx,requireRole,scope,audit,...professionals});
  const agendaNotices=appointmentNotices({db,get,all,run,tx,audit,env,transport,professionalApproved:professionals.professionalApproved});
  insights=attendanceInsights({db,get,all,run,tx,requireRole,scope,audit,env,transport});
- rollcalls=rollcallTools({db,get,all,run,tx,requireRole,scope,audit,env,transport});
+ rollcalls=rollcallTools({db,get,all,run,tx,requireRole,scope,audit,env,transport,requireAttendanceWrite:project.requireAttendanceWrite,canAttendanceWrite:project.canAttendanceWrite});
  db.exec('CREATE TABLE IF NOT EXISTS student_sequences(prefix TEXT PRIMARY KEY,last_number INTEGER NOT NULL CHECK(last_number BETWEEN 0 AND 999999))');
  const initial=env.BOOTSTRAP_ADMIN_EMAIL?.trim().toLowerCase();
  if(initial&&emailValid(initial)&&!get("SELECT user_id FROM members WHERE role='admin'")){
@@ -97,7 +98,7 @@ export function createSqliteStore(env,{transport=fetch}={}){
  const api={
   ...siteEditor({db,get,all,run,tx,requireRole,scope,audit,objectPath}),
   ...diagnostics({db,get,all,run,tx,requireRole,scope,audit}),
-  ...contactSettings({db,get,run,tx,requireRole,audit}),...insights,...rollcalls,...staffAccounts({db,get,all,run,tx,requireRole,scope,audit}),...project,...evidence,...teaching,...professionals,...scheduling,...workforceTools({db,get,all,run,tx,requireRole,scope,audit}),...studentDetails({db,get,all,run,tx,requireRole,scope,audit}),
+  ...contactSettings({db,get,run,tx,requireRole,audit}),...insights,...rollcalls,...staff,...project,...evidence,...teaching,...professionals,...scheduling,...workforceTools({db,get,all,run,tx,requireRole,scope,audit}),...studentDetails({db,get,all,run,tx,requireRole,scope,audit}),
   ...agendaNotices,
   ...whatsappNotices({db,get,all,run,tx,requireRole,audit,env,transport,targets:()=>[...insights.absenceWhatsappTargets(),...rollcalls.rollcallWhatsappTargets()]}),
   async sendBookingNotice(actor,id){await scheduling.booking(actor,id);await agendaNotices.sendPrivateNotice(id)},

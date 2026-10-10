@@ -1,3 +1,4 @@
+import {fixtureTeacher,fixtureGroup} from './school-fixtures.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -20,10 +21,10 @@ async function fixture(t){
  const req=(m,route,method='GET',data)=>handlePortal(new Request(env.PUBLIC_ORIGIN+'/api/portal'+route,{method,headers:{Origin:env.PUBLIC_ORIGIN,Authorization:'Bearer '+tokens.get(m.user_id),...(data?{'Content-Type':'application/json'}:{})},...(data?{body:JSON.stringify(data)}:{})}),env,store);
  const secretaries=[];for(let i=0;i<3;i++){const m=await store.saveStaffAccount(admin.user_id,null,account('secretary'+i+'@example.test',[ADMIN_UNITS[i]]));token(m);secretaries.push(m)}
  const pupils=ADMIN_UNITS.map((u,i)=>({id:`UND${i+1}_000001`,name:'Aluno Fictício '+i,birth_date:'2015-01-01',status:'approved',version:0}));await store.import(admin.user_id,pupils);
- const regs=[],groups=[],classes=[],docs=[];
+ const regs=[],groups=[],classes=[],docs=[];const responsible=await fixtureTeacher(store,admin.user_id,ADMIN_UNITS);
  for(let i=0;i<3;i++){
   const id=randomUUID();await store.manualRegistration(admin.user_id,{id,student_name:'Candidato Fictício '+i,birth_date:'2016-01-01',unit:ADMIN_UNITS[i],guardian_name:'Responsável Fictício',guardian_email:`guardian${i}@example.test`,guardian_phone:'24999999999',relationship:'Responsável',consent_version:'teste-v1',source_reference:'Teste isolado',checked:true});regs.push(id);
-  groups.push(await store.saveGroup(admin.user_id,null,{unit:ADMIN_UNITS[i],label:'Turma Fictícia '+i,weekdays:[0,1,2,3,4,5,6],start_time:'10:00',end_time:'11:00',active:true,version:0,students:[pupils[i].id]}));
+  groups.push(await store.saveGroup(admin.user_id,null,{unit:ADMIN_UNITS[i],label:'Turma Fictícia '+i,weekdays:[0,1,2,3,4,5,6],start_time:'10:00',end_time:'11:00',active:true,version:0,students:[pupils[i].id],teachers:[responsible.user_id]}));
   classes.push(await store.createClass(admin.user_id,{group_id:groups[i].id,day:new Date().toISOString().slice(0,10)}));
   const did=randomUUID(),key=pupils[i].id+'/'+did+'.pdf';await store.upload(key,Buffer.from('%PDF-1.7 fixture'));await store.addDocument({id:did,student_id:pupils[i].id,kind:'report_card',object_path:key,original_name:'fixture.pdf',mime:'application/pdf',size:16,created_by:admin.user_id});docs.push(did);
  }
@@ -81,7 +82,7 @@ test('Núcleos: funcionários compartilhados têm lista mínima, sem documento o
  const f=await fixture(t),local=f.store.forActor(f.secretaries[0].user_id),who=f.secretaries[0].user_id;
  const data={name:'Professor Compartilhado',email:'teacher@example.test',phone:'24999999999',belt_degree:'Preta',certificate_issuer:'TESTE',certificate_date:'2020-01-01',notes:'PRIVADO',availability:'PRIVADO',status:'pending',version:0,units:ADMIN_UNITS};
  const teacher=await f.store.saveTeacher(f.admin.user_id,null,data);
- const list=await local.teachers(who);assert.equal(list.length,1);assert.equal(list[0].scope_readonly,true);assert.deepEqual(list[0].units,['amavale']);assert.doesNotMatch(JSON.stringify(list),/PRIVADO/);
+ const list=await local.teachers(who);assert.equal(list.length,2);assert.equal(list[0].scope_readonly,true);assert.deepEqual(list[0].units,['amavale']);assert.doesNotMatch(JSON.stringify(list),/PRIVADO/);
  await assert.rejects(local.teacher(who,teacher.user_id),{status:403});await assert.rejects(local.saveTeacher(who,teacher.user_id,{...data,units:['amavale'],version:1}),{status:403});
  await assert.rejects(local.saveTeacher(who,null,{...data,email:'other@example.test',units:['valparaiso']}),{status:403});
  const own=await local.saveTeacher(who,null,{...data,email:'local@example.test',units:['amavale']});assert.equal((await local.teacher(who,own.user_id)).name,data.name);

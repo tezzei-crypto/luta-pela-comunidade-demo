@@ -1,0 +1,74 @@
+PROMPT PROFISSIONAL EXECUTADO — LUTA PELA COMUNIDADE
+
+Objetivo: garantir professor responsável por turma e autoria verificável de cada
+lançamento de presença, preservando registros reais e separação por núcleo.
+
+Regras definidas pela gestão em 09/10/2026:
+1. Todos os administradores podem lançar em todos os núcleos. Fabio Tezzei é o
+coordenador indicado e já possui função administrativa com abrangência geral.
+2. Professor só pode operar chamadas das turmas explicitamente vinculadas a ele,
+em núcleo autorizado, com conta ativa e liberação documental ou teste explícito.
+3. Secretaria geral pode lançar em todos os núcleos. Fabiola é a pessoa indicada.
+Secretaria de núcleo consulta no próprio escopo e não lança/cancela chamadas.
+Selecionar os três núcleos não transforma automaticamente uma secretaria em geral.
+4. Toda turma ativa exige professor habilitado. Turmas sem responsável podem ser
+salvas inativas. Cadastros legados permanecem preservados e sinalizados; não inferir
+vínculos pela existência de um único professor. Novas aulas exigem turma vinculada.
+5. Salvar presença e histórico deve ser transação única, com controle de versão.
+Registrar conta autenticada, nome, função, data, hora, situação anterior e nova.
+Não aceitar autoria fornecida pelo cliente. Correções não apagam os eventos antigos.
+6. Mostrar autoria por aluno, histórico paginado da aula e responsável no CSV.
+Para registros anteriores, conservar apenas a última alteração conhecida, marcada
+como registro anterior à implantação; não inventar os estados anteriores.
+7. Reavaliar direitos no servidor a cada operação. Remoção do vínculo, desativação
+ou alteração do tipo de secretaria tem efeito sem depender de esconder botões.
+8. Preservar alertas de chamada incompleta e de faltas, fotos privadas, histórico
+de alunos da aula, limite por núcleo e sincronização dos painéis.
+
+Verificação:
+Testar administradores, secretaria geral/local (inclusive local em três núcleos),
+professor vinculado/não vinculado/revogado, guardião, chamadas canceladas, datas
+futuras, matrícula de outro núcleo, repetição, concorrência, rollback do lote,
+paginação, migração idempotente e persistência. Dados fictícios isolados, sem
+alteração de presenças reais nem disparo de mensagens externas como teste.
+Rodar a suíte completa Node 24, validar formulários/histórico no navegador,
+conferir versão remota, build, saúde e comportamento publicado.
+
+Base técnica consultada (fontes primárias):
+Moodle: professor vinculado ao contexto do curso/turma, e não automaticamente ao
+site inteiro. https://docs.moodle.org/503/en/Teacher_role
+NIST SP 800-162: autorização considerando atributos da pessoa, recurso, operação
+e contexto. https://csrc.nist.gov/pubs/sp/800/162/upd2/final
+OWASP: registros devem permitir identificar quando, onde, quem e o que ocorreu.
+https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html
+OWASP: menor privilégio, negar por padrão e conferir permissões por requisição.
+https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html
+
+Essas fontes fundamentam o desenho de engenharia. Os cargos permitidos e o prazo
+de 12 horas são decisões da gestão, não resultados de ensaio científico. Os testes
+não certificam ausência de defeitos nem substituem validação operacional.
+
+EXTENSÃO DO PROMPT — PROFESSOR NO CELULAR
+Priorizar a chamada na entrada, com atalho explícito para turmas previstas hoje,
+sem criar presenças automaticamente. Um toque seleciona a situação do aluno;
+um salvamento grava o lote revisado. Fornecer busca sem perder marcações,
+atalho para o próximo aluno não marcado, botões com texto e estado acessível,
+contagem de marcações e mudanças ainda não salvas. Manter salvar ao alcance no
+rodapé móvel, sem cobrir o último aluno; coluna única e grade adaptada a 320px.
+Guardar rascunho mínimo por conta e sessão na mesma aba (sem nomes ou contatos),
+expirar no fim da sessão e apagar no logout. Falha de rede preserva o rascunho;
+sem resposta positiva não apresentar salvamento como concluído. Falha ao carregar
+fotos não deve impedir chamada; falha de recarga após salvar deve informar o
+salvamento confirmado e oferecer nova consulta, sem dizer que o envio falhou.
+O rascunho não é um sistema offline completo nem dispensa conexão para salvar.
+Medir o caminho por ações, testar perda de conexão/repetição/conflito/retorno à
+tela. Não afirmar ganho de tempo percentual sem estudo com professores reais.
+
+Referências adicionais:
+W3C WCAG 2.2, tamanho de alvo aprimorado: pelo menos 44×44 pixels CSS, consideradas
+as exceções do critério. Botões principais da chamada usam pelo menos 48–52px.
+https://www.w3.org/WAI/WCAG22/Understanding/target-size-enhanced.html
+W3C, mensagens de estado sem exigir mudança de foco:
+https://www.w3.org/WAI/WCAG22/Understanding/status-messages.html
+São diretrizes de acessibilidade e desenho de interação, não certificação global
+WCAG nem comprovação experimental de produtividade deste site.

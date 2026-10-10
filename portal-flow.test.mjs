@@ -1,3 +1,4 @@
+import {fixtureTeacher,fixtureGroup} from './school-fixtures.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -65,7 +66,7 @@ test('Servidor HTTP: páginas, scripts e privacidade dos arquivos internos',asyn
 
 test('Chamada: aula única, estados explícitos, conflito de versão e CSV',async t=>{
  const {request,store,admin}=await fixture(t);await store.import(admin.user_id,[pupil]);
- const data={unit:'amavale',day:'2020-01-01',time:'18:00',label:'Jiu-Jitsu de teste'};
+ const selectedGroup=await fixtureGroup(store,admin.user_id,'amavale',[pupil.id]);const data={group_id:selectedGroup.id,unit:'amavale',day:'2020-01-01',time:'18:00',label:'Jiu-Jitsu de teste'};
  const lesson=(await (await request('/classes',{method:'POST',data})).json()).lesson;
  assert.equal((await (await request('/classes',{method:'POST',data})).json()).lesson.id,lesson.id);
  const route='/classes/'+lesson.id+'/attendance';let rows=(await (await request(route)).json()).students;assert.equal(rows[0].status,'unmarked');
@@ -77,9 +78,9 @@ test('Chamada: aula única, estados explícitos, conflito de versão e CSV',asyn
 });
 test('Chamada: bloqueia outra unidade, data futura e responsáveis',async t=>{
  const {request,store,admin,login}=await fixture(t);await store.import(admin.user_id,[pupil,{...pupil,id:'UND2_000001'}]);
- const lesson=(await (await request('/classes',{method:'POST',data:{unit:'amavale',day:'2020-01-01',time:'18:00',label:'Aula teste'}})).json()).lesson;
+ const lesson=(await (await request('/classes',{method:'POST',data:{group_id:(await fixtureGroup(store,admin.user_id,'amavale',[pupil.id])).id,day:'2020-01-01'}})).json()).lesson;
  const route='/classes/'+lesson.id+'/attendance';assert.equal((await request(route,{method:'POST',data:{rows:[{id:'UND2_000001',status:'present',version:0}]}})).status,403);
- const future=(await (await request('/classes',{method:'POST',data:{unit:'amavale',day:'2099-01-01',time:'18:00',label:'Aula futura'}})).json()).lesson;
+ const future=(await (await request('/classes',{method:'POST',data:{group_id:(await fixtureGroup(store,admin.user_id,'amavale',[pupil.id],'Turma futura')).id,day:'2099-01-01'}})).json()).lesson;
  assert.equal((await request('/classes/'+future.id+'/attendance',{method:'POST',data:{rows:[{id:pupil.id,status:'present',version:0}]}})).status,400);
  await store.provision('guardian@example.test','guardian');const token=await login('guardian@example.test');assert.equal((await request(route,{token})).status,403);assert.equal((await request('/classes?unit=amavale',{token})).status,403);
 });
@@ -108,7 +109,7 @@ test('Professor: aprovação documental, unidades limitadas e nenhuma ficha priv
  const group=await store.saveGroup(admin.user_id,null,{unit:'amavale',label:'Aula vinculada',weekdays:[3],start_time:'18:00',end_time:'19:00',active:true,version:0,students:[pupil.id],teachers:[teacher.user_id]});
  const lesson=(await (await request('/classes',{token,method:'POST',data:{group_id:group.id,day:'2020-01-01'}})).json()).lesson;
  assert.equal((await request('/classes/'+lesson.id+'/attendance',{token,method:'POST',data:{rows:[{id:pupil.id,status:'present',version:0}]}})).status,200);
- const other=(await (await request('/classes',{method:'POST',data:{unit:'valparaiso',day:'2020-01-01',time:'18:00',label:'Aula'}})).json()).lesson;
+ const other=(await (await request('/classes',{method:'POST',data:{group_id:(await fixtureGroup(store,admin.user_id,'valparaiso',['UND2_000001'])).id,day:'2020-01-01'}})).json()).lesson;
  assert.equal((await request('/classes/'+other.id+'/attendance',{token})).status,403);
  assert.equal((await request('/teachers',{token,method:'POST',data:{...teacherData,email:'x@example.test'}})).status,403);
  assert.equal((await request('/members/'+teacher.user_id,{method:'PATCH',data:{role:'teacher',active:false}})).status,200);assert.equal((await request('/units',{token})).status,401);

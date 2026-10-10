@@ -1,3 +1,4 @@
+import {fixtureTeacher,fixtureGroup} from './school-fixtures.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';import os from 'node:os';import path from 'node:path';import {randomUUID} from 'node:crypto';
@@ -11,7 +12,8 @@ async function fixture(t){
  const teacher=(await store.saveTeacher(admin,null,{name:'Docente Fictício',email:'teacher@example.test',phone:'24999999999',status:'pending',test_access:true,units:['amavale'],version:0})).user_id;
  await store.import(admin,[{id:'UND1_000001',name:'Estudante Fictício',birth_date:'2018-01-01',status:'approved',version:0}]);
  const group=await store.saveGroup(admin,null,{unit:'amavale',label:'Turma Fictícia',weekdays:[0,1,2,3,4,5,6],start_time:'10:00',end_time:'11:00',active:true,students:['UND1_000001'],teachers:[teacher],version:0});
- const other=await store.saveGroup(admin,null,{...group,id:undefined,label:'Outra turma',start_time:'13:00',end_time:'14:00',students:['UND1_000001'],teachers:[],version:0});
+ const otherTeacher=await fixtureTeacher(store,admin,['amavale'],'other-teacher@example.test');
+ const other=await store.saveGroup(admin,null,{...group,id:undefined,label:'Outra turma',start_time:'13:00',end_time:'14:00',students:['UND1_000001'],teachers:[otherTeacher.user_id],version:0});
  const dates=Array.from({length:7},(_,i)=>new Date(+new Date(localDay()+'T12:00:00Z')-(7-i)*86400000).toISOString().slice(0,10));
  const lesson=async(i,status,g=group)=>{const c=await store.createClass(admin,{group_id:g.id,day:dates[i]});if(status)await store.markAttendance(admin,c.id,[{id:'UND1_000001',status,version:0}]);return c};
  const image=await sharp({create:{width:32,height:24,channels:3,background:'#124966'}}).png().withMetadata().toBuffer();
