@@ -1,0 +1,39 @@
+'use strict';
+function backupAttention(result){
+ if(!me||me.role!=='admin')return;let banner=$('backup-attention');const issue=result.settings.configured&&(result.overdue||result.external_pending||result.restore_pending||result.last_run?.state==='failed');
+ if(!issue){banner?.remove();return}if(!banner){banner=el('div',undefined,{id:'backup-attention',class:'form-error',role:'status',style:'padding:12px;margin:12px 0;border-left:5px solid #a66b00'});$('workspace').before(banner)}
+ const text=result.last_run?.state==='failed'?'A última tentativa de backup falhou.':result.overdue?'O backup precisa ser atualizado.':result.external_pending?'A cópia automática mais recente no Drive está pendente.':'É necessário testar a recuperação do backup.';
+ if(banner.dataset.message!==text){banner.dataset.message=text;const link=el('a','Abrir Backup e recuperação',{href:'#backup-area'});link.addEventListener('click',()=>{if(typeof showPanel==='function')showPanel('backup-area')});banner.replaceChildren(el('strong','Proteção dos dados: '+text+' '),link)}
+}
+async function loadBackups(){
+ const result=await api('/backups');if(!me||me.role!=='admin'||!$('backup-content'))return;const {settings:s,packages}=result,box=$('backup-content');box.replaceChildren();
+ backupAttention(result);
+ const state=result.running?'Backup em execução.':result.overdue?'Atenção: ainda não há um backup recente.':'Backup recente disponível.';
+ box.append(el('p',state,{role:'status',class:result.overdue?'form-error':'form-success'}),el('p',result.external_pending?'Envio automático ao Drive: cópia mais recente ainda não confirmada.':'Cópia mais recente conferida no Drive.'),el('p',result.restore_pending?'Restauração: registre um teste nos últimos 30 dias com a chave atual.':'Restauração: relatório recente registrado pela administração.'));
+ if(result.last_run?.state==='failed')box.append(el('p',result.last_run.error,{role:'alert',class:'form-error'}));
+ box.append(el('p','O pacote inclui banco de dados, documentos, fotos, conteúdo do site, código e configuração. Sessões e códigos de login são removidos da cópia. A chave privada é necessária para recuperar os dados.'));
+ const generate=el('button',result.running?'Gerando backup…':'Gerar backup criptografado agora',{type:'button'});generate.disabled=result.running||!s.configured;generate.addEventListener('click',action(async()=>{notice('Gerando e verificando o backup. Mantenha esta página aberta.');await api('/backups',{method:'POST',data:{}});await loadBackups();notice('Backup criado. Confira os estados da cópia externa e da restauração.')}));box.append(generate);
+ const policy=el('details');policy.open=!s.configured;policy.append(el('summary','Configurar proteção e frequência'));
+ const form=el('form'),label=el('label','Chave pública de recuperação (PEM)',{for:'backup-public-key'}),key=el('textarea',undefined,{id:'backup-public-key',rows:'5',spellcheck:'false',autocomplete:'off'});key.style.width='100%';key.placeholder=s.configured?'Chave cadastrada. Deixe vazio para manter.':'Cole apenas a chave PUBLIC KEY';
+ form.append(label,key,el('p',s.key_id?'Identificação da chave: '+s.key_id:'Gere as chaves com a ferramenta de recuperação. Guarde a chave privada fora do servidor e separada dos arquivos de backup.',{style:'overflow-wrap:anywhere'}));
+ const saved=field(form,'A chave privada foi guardada em local separado e protegido','key_saved',String(s.key_saved),{options:{false:'Ainda não',true:'Sim, guarda confirmada'}});
+ key.maxLength=16000;key.addEventListener('input',()=>{saved.value='false'});
+ const interval=field(form,'Intervalo entre cópias','interval_hours',String(s.interval_hours),{options:{4:'A cada 4 horas',12:'A cada 12 horas',24:'A cada 24 horas'}});
+ const enabled=field(form,'Rotina no servidor','enabled',String(s.enabled),{options:{false:'Pausada',true:'Ativada'}});
+ const folder=field(form,'ID da pasta privada no Google Drive institucional','drive_folder',s.drive_folder);folder.maxLength=160;
+ form.append(el('p',s.drive_connected?'Autorização do Drive configurada no servidor.':'A autorização da API do Drive ainda precisa ser configurada no servidor. Informar a pasta, sozinho, não ativa o envio.'),el('p','Guarde outra cópia no computador. Copie periodicamente para um HD externo e desconecte-o depois. A geração local continua se o Drive falhar; confira os avisos. Nenhuma cópia antiga é excluída automaticamente nesta versão.'),el('button','Salvar política de backup'));
+ form.addEventListener('submit',action(async()=>{await api('/backups/settings',{method:'PATCH',data:{public_key:key.value.trim(),key_saved:saved.value==='true',enabled:enabled.value==='true',interval_hours:Number(interval.value),drive_folder:folder.value.trim(),version:s.version}});await loadBackups();notice('Política salva.')}));policy.append(form);box.append(policy);
+ box.append(el('h3','Cópias e recuperação'));
+ if(!packages.length)box.append(el('p','Nenhum pacote completo gerado ainda.'));
+ for(const p of packages){const row=el('article',undefined,{class:'card',style:'margin-top:16px;padding:16px;overflow-wrap:anywhere'});row.append(el('h4',new Date(p.created_at).toLocaleString('pt-BR')),el('p',`${(p.size/1048576).toFixed(1)} MB · ${p.objects} arquivos enviados ao sistema · ${p.files} arquivos no pacote`),el('p',p.drive_verified_at?'Drive: tamanho e checksum conferidos.':'Drive: cópia externa pendente.'),el('p',p.verified_at?'Restauração: relatório registrado.':'Restauração: teste ainda não registrado.'),el('p','SHA-256: '+p.sha256,{style:'font-size:.8em'}));
+  if(p.error)row.append(el('p',p.error,{class:'form-error'}));
+  const down=el('button','Baixar cópia criptografada',{type:'button',class:'secondary'});down.addEventListener('click',action(async()=>{download(await api('/backups/'+p.id+'/download',{blob:true}),p.name);notice('Download solicitado. Guarde o arquivo e confira a restauração.')}));row.append(down);
+  const drive=el('button','Enviar / conferir no Drive',{type:'button',class:'secondary'});drive.disabled=!s.drive_connected||!s.drive_folder;drive.addEventListener('click',action(async()=>{await api('/backups/'+p.id+'/drive',{method:'POST',data:{}});await loadBackups()}));row.append(drive);
+  const report=el('details');report.append(el('summary','Registrar resultado de restauração isolada'));const rf=el('form'),input=field(rf,'Arquivo restore-report.json gerado pela ferramenta','report','',{type:'file'});input.accept='.json';input.required=true;rf.append(el('button','Conferir e registrar relatório'));rf.addEventListener('submit',action(async()=>{const file=input.files[0];if(!file||file.size>200000)throw Error('Escolha o relatório JSON da restauração.');await api('/backups/'+p.id+'/verify',{method:'POST',data:JSON.parse(await file.text())});await loadBackups()}));report.append(rf);row.append(report);box.append(row);
+ }
+ box.append(el('p','Recuperação é feita em diretório novo e isolado, pela ferramenta técnica. Este painel não substitui o banco de produção.'));
+}
+document.addEventListener('portal:loaded',()=>{if(me?.role!=='admin')return;if(!$('backup-area')){const box=el('section',undefined,{id:'backup-area'}),reload=el('button','Atualizar situação',{type:'button',class:'secondary'});reload.addEventListener('click',action(loadBackups));box.append(el('h2','Backup e recuperação'),reload,el('div',undefined,{id:'backup-content'}));$('workspace').append(box)}action(loadBackups)()});
+let backupNoticeTimer;
+document.addEventListener('portal:loaded',()=>{clearInterval(backupNoticeTimer);if(me?.role==='admin')backupNoticeTimer=setInterval(async()=>{if(document.visibilityState==='hidden')return;try{backupAttention(await api('/backups'))}catch{}},300000)});
+document.addEventListener('portal:logout',()=>{clearInterval(backupNoticeTimer);$('backup-area')?.remove();$('backup-attention')?.remove()});
