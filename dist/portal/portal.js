@@ -78,3 +78,5 @@ import('/portal/system-sync.js').then(({startSystemSync})=>startSystemSync({api,
  for(const box of document.querySelectorAll('section[id$="-detail"]')){box.hidden=true;box.replaceChildren()}
  if(chosen&&typeof currentPanel!=='undefined'&&currentPanel==='students-area'){if(students.some(s=>s.id===chosen))await detail(chosen);else{$('detail').hidden=true;$('detail').replaceChildren();chosen=''}}
 }})).catch(()=>notice('A atualização automática não iniciou. Atualize a página para tentar novamente.',true));
+
+import('/portal/absence-attention.js').then(({startAbsenceAttention})=>startAbsenceAttention({api,el,action,active:()=>me,showPanel:id=>showPanel(id)})).catch(()=>notice('Não foi possível iniciar os avisos de faltas. Atualize a página.',true));

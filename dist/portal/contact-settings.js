@@ -8,6 +8,7 @@ async function loadContactSettings(){
  form.append(el('button','Salvar contato da secretaria'));
  const status=el('p','Atualizado em '+new Date(settings.updated_at).toLocaleString('pt-BR'),{class:'muted'});box.append(form,status);
  form.addEventListener('submit',action(async()=>{const p=await api('/contact-settings',{method:'PATCH',data:{phone:phone.value,enabled:enabled.value==='true',version:settings.version}});await loadContactSettings();$('contact-settings-form').prepend(el('p',p.message,{role:'status',class:'form-success'}));notice(p.message)}));
+ const {mountWhatsappSettings}=await import('./whatsapp-settings.js');await mountWhatsappSettings({api,el,field,action,notice},$('contact-settings-area')); 
 }
 document.addEventListener('portal:loaded',()=>{
  if(me.role!=='admin')return;

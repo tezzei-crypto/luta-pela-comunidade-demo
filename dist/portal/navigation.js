@@ -3,7 +3,7 @@ const panelItems=[
  ['dashboard-area','Visão geral',['admin','secretary']],['students-area','Alunos',['admin','secretary','guardian']],
  ['registrations-area','Candidatos',['admin','secretary']],['teacher-area','Professores',['admin','secretary']],['monitors-area','Monitores',['admin','secretary']],['workforce-area','Frequência da equipe',['admin','secretary']],
  ['professionals-area','Psicologia e assistência social',['admin','secretary']],['schedule-area','Agenda',['admin','secretary','guardian','psychologist','social_worker']],
- ['groups-area','Turmas e matrículas',['admin','secretary']],['attendance-area','Presença',['admin','secretary','teacher']],['rollcall-area','Chamadas pendentes',['admin','secretary','teacher']],['attendance-report-area','Relatório de presença',['admin','secretary','psychologist','social_worker']],['reports-area','Ocorrências e lesões',['admin','secretary','teacher','psychologist','social_worker']],
+ ['groups-area','Turmas e matrículas',['admin','secretary']],['attendance-area','Presença',['admin','secretary','teacher']],['rollcall-area','Chamadas pendentes',['admin','secretary','teacher']],['attendance-report-area','Relatório de presença',['admin','secretary','psychologist','social_worker']],['absence-attention-area','Avisos de faltas',['admin','secretary','teacher','psychologist','social_worker']],['reports-area','Ocorrências e lesões',['admin','secretary','teacher','psychologist','social_worker']],
  ['team-area','Equipe e acessos',['admin']],['import-area','Planilhas',['admin','secretary']],['site-editor-area','Editar site',['admin']],['contact-settings-area','Contato da secretaria',['admin']],['audit-area','Histórico',['admin']],['diagnostics-area','Diagnóstico de erros',['admin']]
 ];
 let currentPanel='';

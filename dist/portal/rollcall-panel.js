@@ -1,5 +1,7 @@
+import {watchAttention,createAttentionNotice} from './attention.js';
 export function startRollcallPanel({api,el,field,action,notice,active,showPanel,openCall}){
- let area,content,banner,settingsForm,settingsBaseline='',loading=false;
+ let area,content,settingsForm,settingsBaseline='',rendered='',latest;
+ const banner=createAttentionNotice({id:'rollcall-banner',el,action});
  const units={amavale:'Amavale',valparaiso:'Valparaíso','vale-do-carangola':'Vale do Carangola'};
  const labels={open:'Pendente',resolved:'Concluída',cancelled:'Cancelada'};
  const snapshot=form=>JSON.stringify([...form.elements].filter(e=>e.name).map(e=>[e.name,e.type==='checkbox'?e.checked:e.value]));
@@ -22,9 +24,8 @@ export function startRollcallPanel({api,el,field,action,notice,active,showPanel,
  }
  function render(data){
   const {issues,settings:s}=data,open=issues.filter(i=>i.status==='open'&&!i.within_grace);
+  const previousUnit=content.querySelector('[name=unit]')?.value||'',previousStatus=content.querySelector('[name=status]')?.value||'open';
   content.replaceChildren();
-  banner.replaceChildren(document.createTextNode(open.length?`${open.length} chamada(s) pendente(s) de conclusão. `:'Chamadas em dia: nenhuma pendência identificada. '),button('Ver chamadas pendentes',()=>showPanel('rollcall-area')));
-  banner.hidden=!open.length;
   content.append(el('p',`${open.length} pendente(s) · verificado às ${new Date().toLocaleTimeString('pt-BR',{timeZone:'America/Sao_Paulo',hour:'2-digit',minute:'2-digit'})}`,{role:'status','aria-live':'polite'}));
   content.append(el('p',s.enabled?`Aulas verificadas a cada ${s.check_interval_minutes} minutos, ${s.grace_minutes/60} hora(s) após o término. Até ${s.max_notices} email(s) por destinatário e aula, com intervalo de ${s.repeat_hours} horas.`:'Monitoramento pausado pela administração. As pendências anteriores continuam disponíveis para conferência.',{class:s.enabled?'form-success':'form-error'}));
   if(s.quiet_start!==s.quiet_end)content.append(el('p',`Emails pausados das ${String(s.quiet_start).padStart(2,'0')}h às ${String(s.quiet_end).padStart(2,'0')}h, horário de Brasília. O painel continua disponível.`));
@@ -50,22 +51,23 @@ export function startRollcallPanel({api,el,field,action,notice,active,showPanel,
     }
     delivery.append(el('small','Aceito pelo provedor não confirma leitura nem chegada à caixa de entrada. Ao completar a chamada, os próximos lembretes param. Um email já em processamento pode ainda chegar.'));card.append(delivery);list.append(card);
    }
-  };uf.addEventListener('change',draw);sf.addEventListener('change',draw);draw();
+  };if([...uf.options].some(o=>o.value===previousUnit))uf.value=previousUnit;sf.value=previousStatus;uf.addEventListener('change',draw);sf.addEventListener('change',draw);draw();
   content.append(button('Atualizar chamadas pendentes',()=>refresh(true)));
   if(s.can_edit)content.append(settingsEditor(s));
  }
- async function refresh(force=false){
-  if(!['admin','secretary','teacher'].includes(active()?.role)||loading)return;
-  if(!force&&settingsForm?.isConnected&&snapshot(settingsForm)!==settingsBaseline)return;
-  loading=true;try{
-   const data=await api('/rollcall-issues');
-   if(!area?.isConnected){area=el('section',undefined,{id:'rollcall-area'});area.append(el('h2','Chamadas pendentes'),el('p','Acompanhe aulas sem chamada ou com alunos ainda sem marcação. Abra a chamada, revise e salve. Se a aula não ocorreu, registre o cancelamento com motivo dentro da chamada.'));content=el('div');area.append(content);document.getElementById('team-area').before(area)}
-   if(!banner?.isConnected){banner=el('div',undefined,{id:'rollcall-banner',class:'form-error',role:'status','aria-live':'polite'});document.getElementById('identity').parentElement.after(banner)}
-   render(data);
-  }finally{loading=false}
+ function updateBanner(data,stale=false){
+  const pending=(data?.issues||[]).filter(i=>i.status==='open').sort((a,b)=>Number(a.within_grace)-Number(b.within_grace)||a.notify_after.localeCompare(b.notify_after)),late=pending.filter(i=>!i.within_grace),first=pending[0];
+  banner.update({count:pending.length,stale,level:late.length?'urgent':'warning',title:stale?'Não foi possível atualizar as chamadas':pending.length?`${pending.length} chamada(s) precisam ser concluídas`:'Todas as chamadas monitoradas foram concluídas ou canceladas',
+   detail:stale?'O último resultado pode estar desatualizado. Suas marcações foram preservadas; vamos tentar novamente.':`${late.length} com prazo vencido · ${pending.length-late.length} dentro do prazo. Conclua as marcações de todos os alunos e salve.`,
+   items:pending.slice(0,2).map(i=>`${i.label} · ${units[i.unit]} · ${i.day.split('-').reverse().join('/')} · ${i.marked}/${i.expected} marcações · ${i.within_grace?'Dentro do prazo':'Prazo vencido'}`),
+   primary:stale?'Tentar atualizar':first?'Concluir chamada':null,open:stale?()=>refresh(true):first?()=>openCall(first):null,secondary:pending.length?'Ver todas as chamadas':null,openAll:()=>showPanel('rollcall-area')});
  }
- document.addEventListener('portal:loaded',action(()=>refresh()));
- document.addEventListener('portal:attendance-saved',action(()=>refresh()));
- document.addEventListener('portal:logout',()=>{area?.remove();banner?.remove();area=content=banner=settingsForm=null;settingsBaseline=''});
- if(active())void action(()=>refresh())();
+ const watcher=watchAttention({active,roles:['admin','secretary','teacher'],load:()=>api('/rollcall-issues'),events:['portal:attendance-saved'],onData:data=>{
+   latest=data;updateBanner(data);
+   if(!area?.isConnected){area=el('section',undefined,{id:'rollcall-area'});area.append(el('h2','Chamadas pendentes'),el('p','Acompanhe aulas sem chamada ou com alunos ainda sem marcação. Abra a chamada, revise e salve. Se a aula não ocorreu, registre o cancelamento com motivo dentro da chamada.'));content=el('div');area.append(content);document.getElementById('team-area').before(area)}
+   // The notice still refreshes while settings are being edited.
+   if(settingsForm?.isConnected&&(snapshot(settingsForm)!==settingsBaseline||settingsForm.contains(document.activeElement)))return;
+   const key=JSON.stringify(data);if(key!==rendered){render(data);rendered=key}
+  },onError:()=>updateBanner(latest,true),onLogout:()=>{area?.remove();banner.remove();area=content=settingsForm=null;settingsBaseline=rendered='';latest=null}});
+ function refresh(){return watcher.refresh(true)}
 }
