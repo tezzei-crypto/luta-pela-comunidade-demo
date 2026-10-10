@@ -5,7 +5,7 @@ import {localDay} from './professional-tools.mjs';
 const defaults={enabled:true,teacher_email:true,manager_email:true,grace_minutes:720,repeat_hours:24,max_notices:2,quiet_start:20,quiet_end:8,version:0};
 const brParts=clock=>Object.fromEntries(new Intl.DateTimeFormat('en-US',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',hourCycle:'h23'}).formatToParts(clock).map(p=>[p.type,p.value]));
 const brDay=clock=>{const p=brParts(clock);return `${p.year}-${p.month}-${p.day}`};
-export function rollcallTools({db,get,all,run,tx,requireRole,scope,audit,env,transport}){
+export function rollcallTools({db,get,all,run,tx,requireRole,scope,audit,env,transport,requireAttendanceWrite,canAttendanceWrite}){
  db.exec(`CREATE TABLE IF NOT EXISTS attendance_monitor_settings(key TEXT PRIMARY KEY,value TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS rollcall_issues(id TEXT PRIMARY KEY,group_id TEXT NOT NULL REFERENCES class_groups(id),day TEXT NOT NULL,unit TEXT NOT NULL,
  status TEXT NOT NULL,expected INTEGER NOT NULL,marked INTEGER NOT NULL,teachers TEXT NOT NULL,reason TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,UNIQUE(group_id,day));
@@ -74,9 +74,9 @@ export function rollcallTools({db,get,all,run,tx,requireRole,scope,audit,env,tra
    const m=access(actor);tx(()=>reconcile(clock));
    return all('SELECT i.*,g.label,g.start_time,g.end_time,c.id AS class_id FROM rollcall_issues i JOIN class_groups g ON g.id=i.group_id LEFT JOIN classes c ON c.group_id=i.group_id AND c.day=i.day ORDER BY day DESC,g.start_time')
     .filter(r=>(m.role!=='secretary'||scope.permits(actor,r.unit))&&(!p.unit||r.unit===p.unit)&&(!p.group_id||r.group_id===p.group_id)&&(!p.status||r.status===p.status)&&(m.role!=='teacher'||teachers({id:r.group_id,unit:r.unit}).some(t=>t.user_id===actor)))
-    .map(r=>({...r,notify_after:new Date(+new Date(r.day+'T'+r.end_time+':00-03:00')+policy().grace_minutes*60000).toISOString(),within_grace:+clock<+new Date(r.day+'T'+r.end_time+':00-03:00')+policy().grace_minutes*60000,teachers:JSON.parse(r.teachers),notifications:all('SELECT n.recipient_id,m.email,m.role,n.status,n.send_count,n.last_sent,n.last_error FROM rollcall_notices n JOIN members m ON m.user_id=n.recipient_id WHERE n.issue_id=?',r.id).filter(n=>m.role!=='teacher'||n.recipient_id===actor)}));
+    .map(r=>({...r,can_write:canAttendanceWrite(actor,{unit:r.unit,group_id:r.group_id}),notify_after:new Date(+new Date(r.day+'T'+r.end_time+':00-03:00')+policy().grace_minutes*60000).toISOString(),within_grace:+clock<+new Date(r.day+'T'+r.end_time+':00-03:00')+policy().grace_minutes*60000,teachers:JSON.parse(r.teachers),notifications:all('SELECT n.recipient_id,m.email,m.role,n.status,n.send_count,n.last_sent,n.last_error FROM rollcall_notices n JOIN members m ON m.user_id=n.recipient_id WHERE n.issue_id=?',r.id).filter(n=>m.role!=='teacher'||n.recipient_id===actor)}));
   },
-  async cancelClass(actor,id,p){return tx(()=>{const m=access(actor),c=get('SELECT * FROM classes WHERE id=?',id);if(!c)fail('Aula não localizada.',404);
+  async cancelClass(actor,id,p){return tx(()=>{const m=access(actor),c=get('SELECT * FROM classes WHERE id=?',id);if(!c)fail('Aula não localizada.',404);requireAttendanceWrite(actor,c);
    if(m.role==='teacher'&&(!c.group_id||!teachers({id:c.group_id,unit:c.unit}).some(t=>t.user_id===actor)))fail('Professor sem vínculo com esta turma.',403);
    if(typeof p.cancelled!=='boolean'||typeof p.reason!=='string'||p.reason.trim().length<5||p.reason.length>500)fail('Informe o motivo do cancelamento ou da reabertura.');
    run('UPDATE classes SET cancelled=?,cancellation_reason=? WHERE id=?',Number(p.cancelled),p.reason.trim(),id);audit(actor,'class.'+(p.cancelled?'cancelled':'reopened')+':'+id);reconcile();return get('SELECT * FROM classes WHERE id=?',id);

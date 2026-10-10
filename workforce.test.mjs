@@ -1,3 +1,4 @@
+import {fixtureTeacher,fixtureGroup} from './school-fixtures.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -15,7 +16,8 @@ async function fixture(t){
  const login=async email=>{await store.requestCode(email);return (await store.verifyCode(email,mail.at(-1).text.match(/\b\d{8}\b/)[0])).access_token};
  const request=async(token,route,method='GET',data)=>handlePortal(new Request(env.PUBLIC_ORIGIN+'/api/portal'+route,{method,headers:{Origin:env.PUBLIC_ORIGIN,Authorization:'Bearer '+token,...(data?{'Content-Type':'application/json'}:{})},...(data?{body:JSON.stringify(data)}:{})}),env,store);
  const pupil={id:'UND1_000001',name:'Aluno Fictício',birth_date:'2018-01-01',status:'approved',version:0};await store.import(admin.user_id,[pupil]);
- const group=await store.saveGroup(sec.user_id,null,{unit:'amavale',label:'Turma fictícia',weekdays:[2,4],start_time:'16:25',end_time:'17:00',active:true,version:0,students:[pupil.id]});
+ const responsible=await fixtureTeacher(store,admin.user_id);
+ const group=await store.saveGroup(sec.user_id,null,{unit:'amavale',label:'Turma fictícia',weekdays:[2,4],start_time:'16:25',end_time:'17:00',active:true,version:0,students:[pupil.id],teachers:[responsible.user_id]});
  const monitorData={name:'Monitor Fictício',email:'monitor@example.test',phone:'24999999999',notes:'',active:true,version:0,units:['amavale']},monitor=await store.saveMonitor(sec.user_id,null,monitorData);
  const teacherData={name:'Professor Fictício',email:'teacher@example.test',phone:'24999999999',belt_degree:'Preta',certificate_issuer:'Entidade de teste',certificate_date:'2020-01-01',status:'pending',version:0,units:['amavale']};let teacher=await store.saveTeacher(sec.user_id,null,teacherData);
  for(const kind of ['photo','black_belt_diploma'])await store.addTeacherDocument(sec.user_id,teacher.user_id,{id:randomUUID(),kind,object_path:'fake/'+randomUUID()+'.pdf',mime:'application/pdf',size:10,original_name:'fixture'});

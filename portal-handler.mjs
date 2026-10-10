@@ -69,7 +69,7 @@ export async function handlePortal(req,env=process.env,injectedStore){
   };
   const roster=async()=>staff?store.students():linked.length?store.students(linked):[];
   if(route==='/auth/verify'&&method==='POST')return json({access_token:session.access_token,expires_in:session.expires_in,role,email:member.email});
-  if(route==='/me'&&method==='GET')return json({role,email:member.email,user_id:actor,session_expires_at:user.expires_at,...(staff?{units:administrativeUnits,scope:role==='admin'?'global':'units'}:{}),...(role==='teacher'?{test_access:await store.teacherTestAccess(actor)}:{})});
+  if(route==='/me'&&method==='GET')return json({role,email:member.email,user_id:actor,...(['admin','secretary','teacher'].includes(role)&&store.attendanceAuthority?await store.attendanceAuthority(actor):{}),session_expires_at:user.expires_at,...(staff?{units:administrativeUnits,scope:role==='admin'?'global':'units'}:{}),...(role==='teacher'?{test_access:await store.teacherTestAccess(actor)}:{})});
   const professionals=await handleProfessionals({req,route,method,url,store,actor});if(professionals)return professionals;
   const details=await handleStudentDetails({req,route,method,store,actor});if(details)return details;
   const teaching=await handleTeaching({route,method,req,url,store,actor});if(teaching)return teaching;
@@ -116,8 +116,9 @@ export async function handlePortal(req,env=process.env,injectedStore){
   if(route==='/classes'&&method==='POST'){requireRole('admin','secretary','teacher');return json({lesson:await store.createClass(actor,await body())},201)}
   if(route==='/attendance.csv'&&method==='GET'){
    requireRole('admin','secretary','teacher');const rows=await store.attendanceExport(actor,url.searchParams.get('unit'),url.searchParams.get('from'),url.searchParams.get('to'));
-   return new Response(csv(rows,['date','time','class','unit','student_id','name','status','version','updated_at']),{headers:{...privateHeaders,'Content-Type':'text/csv; charset=utf-8','Content-Disposition':'attachment; filename="presencas.csv"'}});
+   return new Response(csv(rows,['date','time','class','unit','student_id','name','status','version','updated_at','updated_by','updated_by_name']),{headers:{...privateHeaders,'Content-Type':'text/csv; charset=utf-8','Content-Disposition':'attachment; filename="presencas.csv"'}});
   }
+  const historyMatch=route.match(/^\/classes\/([0-9a-f-]{36})\/attendance-history$/i);if(historyMatch&&method==='GET'){requireRole('admin','secretary','teacher');return json(await store.attendanceHistory(actor,historyMatch[1],url.searchParams.get('before')));}
   const cancelMatch=route.match(/^\/classes\/([0-9a-f-]{36})\/cancellation$/i);if(cancelMatch&&method==='POST')return json({lesson:await store.cancelClass(actor,cancelMatch[1],await body()),message:'Situação da aula atualizada.'});
   const classMatch=route.match(/^\/classes\/([0-9a-f-]+)\/attendance$/i);
   if(classMatch){requireRole('admin','secretary','teacher');if(!uuid(classMatch[1]))fail('Aula inválida.');if(method==='GET')return json(await store.attendance(actor,classMatch[1]));if(method==='POST'){await store.markAttendance(actor,classMatch[1],(await body()).rows);return json({message:'Chamada salva.'})}}

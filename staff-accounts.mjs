@@ -3,7 +3,8 @@ import {fail} from './portal-domain.mjs';
 
 export function staffAccounts({db,get,all,run,tx,requireRole,scope,audit}){
  db.exec(`CREATE TABLE IF NOT EXISTS administrative_profiles(user_id TEXT PRIMARY KEY REFERENCES members(user_id),name TEXT NOT NULL,phone TEXT NOT NULL DEFAULT '',version INTEGER NOT NULL DEFAULT 1,updated_at TEXT NOT NULL)`);
- const query=`SELECT m.user_id,m.email,m.role,m.active,COALESCE(p.name,'') AS name,COALESCE(p.phone,'') AS phone,COALESCE(p.version,0) AS version,p.updated_at FROM members m LEFT JOIN administrative_profiles p ON p.user_id=m.user_id WHERE m.role IN ('admin','secretary')`;
+ if(!all('PRAGMA table_info(administrative_profiles)').some(c=>c.name==='secretary_level'))db.exec("ALTER TABLE administrative_profiles ADD COLUMN secretary_level TEXT NOT NULL DEFAULT 'local' CHECK(secretary_level IN ('local','general'))");
+ const query=`SELECT m.user_id,m.email,m.role,m.active,COALESCE(p.name,'') AS name,COALESCE(p.phone,'') AS phone,COALESCE(p.version,0) AS version,p.updated_at,COALESCE(p.secretary_level,'local') AS secretary_level FROM members m LEFT JOIN administrative_profiles p ON p.user_id=m.user_id WHERE m.role IN ('admin','secretary')`;
  const clean=r=>r?{...r,active:!!r.active,units:r.role==='admin'?[]:all('SELECT unit FROM administrative_units WHERE user_id=? ORDER BY unit',r.user_id).map(u=>u.unit)}:undefined;
  const row=id=>clean(get(query+' AND m.user_id=?',id));
  return {
@@ -14,6 +15,9 @@ export function staffAccounts({db,get,all,run,tx,requireRole,scope,audit}){
    const units=p.role==='secretary'?scope.validate(p.units):[];
    const old=id?row(id):null;if(id&&!old)fail('Conta administrativa não localizada.',404);
    if(who.role!=='admin'&&(p.role==='admin'||old?.role==='admin'))fail('Somente administradores gerais podem gerenciar administradores.',403);
+   const secretaryLevel=p.role==='secretary'?(p.secretary_level??old?.secretary_level??'local'):'local';
+   if(!['local','general'].includes(secretaryLevel))fail('Tipo de secretaria inválido.');
+   if(secretaryLevel==='general'&&units.length!==3)fail('A secretaria geral deve ter os três núcleos explicitamente selecionados.');
    const name=typeof p.name==='string'?p.name.trim():'',phone=typeof p.phone==='string'?p.phone.trim():'';
    const email=typeof p.email==='string'?p.email.trim().toLowerCase():'';
    if(name.length<3||name.length>160||/[\x00-\x1f\x7f]/.test(name)||!/^\+?[\d ()-]{10,25}$/.test(phone)||phone.replace(/\D/g,'').length<10||email.length>254||!/^\S+@\S+\.\S+$/.test(email))fail('Informe nome completo, email válido e telefone com DDD.');
@@ -29,6 +33,8 @@ export function staffAccounts({db,get,all,run,tx,requireRole,scope,audit}){
    }else run('INSERT INTO members(user_id,email,role,active) VALUES(?,?,?,?)',uid,email,p.role,Number(p.active));
    run('DELETE FROM administrative_units WHERE user_id=?',uid);for(const unit of units)run('INSERT INTO administrative_units(user_id,unit) VALUES(?,?)',uid,unit);
    run('INSERT INTO administrative_profiles(user_id,name,phone,version,updated_at) VALUES(?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET name=excluded.name,phone=excluded.phone,version=excluded.version,updated_at=excluded.updated_at',uid,name,phone,version,now);
+   run('UPDATE administrative_profiles SET secretary_level=? WHERE user_id=?',secretaryLevel,uid);
+   if(old?.secretary_level!==secretaryLevel)audit(actor,`staff.secretary_level:${uid}:${old?.secretary_level||'local'}>${secretaryLevel}`);
    audit(actor,`staff.${old?'update':'create'}:${uid}:${old?.role||'new'}>${p.role}:${old?.active??'new'}>${p.active}:v${version}:units=${(old?.units||[]).join(',')}>${units.join(',')}`);
    return row(uid);
   })}
