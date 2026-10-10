@@ -26,8 +26,8 @@ export function startRollcallPanel({api,el,field,action,notice,active,showPanel,
   const {issues,settings:s}=data,open=issues.filter(i=>i.status==='open'&&!i.within_grace);
   const previousUnit=content.querySelector('[name=unit]')?.value||'',previousStatus=content.querySelector('[name=status]')?.value||'open';
   content.replaceChildren();
-  content.append(el('p',`${open.length} pendente(s) · verificado às ${new Date().toLocaleTimeString('pt-BR',{timeZone:'America/Sao_Paulo',hour:'2-digit',minute:'2-digit'})}`,{role:'status','aria-live':'polite'}));
-  content.append(el('p',s.enabled?`Aulas verificadas a cada ${s.check_interval_minutes} minutos, ${s.grace_minutes/60} hora(s) após o término. Até ${s.max_notices} email(s) por destinatário e aula, com intervalo de ${s.repeat_hours} horas.`:'Monitoramento pausado pela administração. As pendências anteriores continuam disponíveis para conferência.',{class:s.enabled?'form-success':'form-error'}));
+  content.append(el('p',`${open.length} com prazo vencido · ${issues.filter(i=>i.status==='open'&&i.within_grace).length} dentro do prazo`,{role:'status','aria-live':'polite'}),el('p','',{id:'rollcall-last-checked',class:'muted'}));
+  content.append(el('p',s.enabled?`O painel consulta as chamadas a cada 20 segundos. Emails são verificados a cada ${s.check_interval_minutes} minutos e só podem sair ${s.grace_minutes/60} hora(s) após o término. Até ${s.max_notices} email(s) por destinatário e aula, com intervalo de ${s.repeat_hours} horas.`:'Monitoramento pausado pela administração. As pendências anteriores continuam disponíveis para conferência.',{class:s.enabled?'form-success':'form-error'}));
   if(s.quiet_start!==s.quiet_end)content.append(el('p',`Emails pausados das ${String(s.quiet_start).padStart(2,'0')}h às ${String(s.quiet_end).padStart(2,'0')}h, horário de Brasília. O painel continua disponível.`));
   if(!s.mail_configured)content.append(el('p','Envio de email indisponível: o servidor ainda precisa de configuração. As pendências permanecem visíveis neste painel.',{class:'form-error',role:'status'}));
   if(!s.teacher_email)content.append(el('p','Emails aos professores desativados. A lista no painel permanece disponível.'));
@@ -66,8 +66,9 @@ export function startRollcallPanel({api,el,field,action,notice,active,showPanel,
    latest=data;updateBanner(data);
    if(!area?.isConnected){area=el('section',undefined,{id:'rollcall-area'});area.append(el('h2','Chamadas pendentes'),el('p','Acompanhe aulas sem chamada ou com alunos ainda sem marcação. Abra a chamada, revise e salve. Se a aula não ocorreu, registre o cancelamento com motivo dentro da chamada.'));content=el('div');area.append(content);document.getElementById('team-area').before(area)}
    // The notice still refreshes while settings are being edited.
-   if(settingsForm?.isConnected&&(snapshot(settingsForm)!==settingsBaseline||settingsForm.contains(document.activeElement)))return;
-   const key=JSON.stringify(data);if(key!==rendered){render(data);rendered=key}
+   if(settingsForm?.isConnected&&(snapshot(settingsForm)!==settingsBaseline||settingsForm.contains(document.activeElement))){checked();return;}
+   const key=JSON.stringify(data);if(key!==rendered){render(data);rendered=key}checked();
   },onError:()=>updateBanner(latest,true),onLogout:()=>{area?.remove();banner.remove();area=content=settingsForm=null;settingsBaseline=rendered='';latest=null}});
+ function checked(){const label=document.getElementById('rollcall-last-checked');if(label)label.textContent='Última consulta concluída às '+new Date().toLocaleTimeString('pt-BR',{timeZone:'America/Sao_Paulo',hour:'2-digit',minute:'2-digit',second:'2-digit'})+' (Brasília).'}
  function refresh(){return watcher.refresh(true)}
 }
