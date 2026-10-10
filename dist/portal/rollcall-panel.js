@@ -41,7 +41,7 @@ export function startRollcallPanel({api,el,field,action,notice,active,showPanel,
     const card=el('article',undefined,{class:'report-record'});
     card.append(el('h3',`${i.status==='open'&&i.within_grace?'Dentro do prazo':labels[i.status]} · ${i.label}`),el('p',`${i.day.split('-').reverse().join('/')} · ${i.start_time}–${i.end_time} · ${units[i.unit]||i.unit}`),el('p',`${i.marked} de ${i.expected} alunos com marcação · ${Math.max(0,i.expected-i.marked)} por preencher`),el('p','Professor(es): '+(i.teachers.map(t=>t.name).join(', ')||'Nenhum professor habilitado vinculado')),el('p',i.status==='open'?i.reason:i.status==='resolved'?'Pendência encerrada: todas as marcações foram feitas ou não há alunos a conferir.':'Aula cancelada ou turma desativada.'));
     if(i.status==='open')card.append(el('p','Prazo para concluir: '+new Date(i.notify_after).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'})+' (Brasília).'+(i.within_grace?' Nenhum novo aviso será enviado antes desse prazo.':'')));
-    card.append(button(i.status==='open'?'Preencher chamada':'Consultar chamada',()=>openCall(i)));
+    card.append(button(i.status==='open'&&i.can_write!==false?'Preencher chamada':'Consultar chamada',()=>openCall(i)));
     if(!i.teachers.length&&s.can_edit)card.append(button('Conferir professores da turma',()=>showPanel('groups-area')));
     const delivery=el('details');delivery.append(el('summary','Avisos e acompanhamento'));
     if(!i.notifications.length)delivery.append(el('p','Sem destinatário de email nesta ocorrência. Confira os vínculos e as regras de envio.'));
@@ -60,7 +60,7 @@ export function startRollcallPanel({api,el,field,action,notice,active,showPanel,
   banner.update({count:pending.length,stale,level:late.length?'urgent':'warning',title:stale?'Não foi possível atualizar as chamadas':pending.length?`${pending.length} chamada(s) precisam ser concluídas`:'Todas as chamadas monitoradas foram concluídas ou canceladas',
    detail:stale?'O último resultado pode estar desatualizado. Suas marcações foram preservadas; vamos tentar novamente.':`${late.length} com prazo vencido · ${pending.length-late.length} dentro do prazo. Conclua as marcações de todos os alunos e salve.`,
    items:pending.slice(0,2).map(i=>`${i.label} · ${units[i.unit]} · ${i.day.split('-').reverse().join('/')} · ${i.marked}/${i.expected} marcações · ${i.within_grace?'Dentro do prazo':'Prazo vencido'}`),
-   primary:stale?'Tentar atualizar':first?'Concluir chamada':null,open:stale?()=>refresh(true):first?()=>openCall(first):null,secondary:pending.length?'Ver todas as chamadas':null,openAll:()=>showPanel('rollcall-area')});
+   primary:stale?'Tentar atualizar':first?(first.can_write===false?'Consultar pendência':'Concluir chamada'):null,open:stale?()=>refresh(true):first?()=>openCall(first):null,secondary:pending.length?'Ver todas as chamadas':null,openAll:()=>showPanel('rollcall-area')});
  }
  const watcher=watchAttention({active,roles:['admin','secretary','teacher'],load:()=>api('/rollcall-issues'),events:['portal:attendance-saved'],onData:data=>{
    latest=data;updateBanner(data);
