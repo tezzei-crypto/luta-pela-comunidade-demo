@@ -7,3 +7,11 @@ node_modules/
 portal-data/
 objects/
 backups/
+recovery-backups/
+*.lpcb
+*.partial
+*.private.pem
+recovery-keys/
+.backup-work-*/
+.restore-work-*/
+.backup-test-*

@@ -26,10 +26,9 @@ Importe o CSV inicial no portal ou com node portal-maintenance.mjs import /camin
 
 ## Backup e limites
 
-node portal-maintenance.mjs backup cria cópia consistente do SQLite. Uma recuperação completa também exige copiar a pasta privada objects/ e guardar o segredo em destino seguro externo ao disco. Teste a restauração. Validação de formato não equivale a antivírus. Aprovação documental, vínculos e confirmação de horários dependem da equipe.
+Administradores gerais acessam **Backup e recuperação** no painel. O pacote completo criptografado reúne snapshot consistente do SQLite, documentos referenciados, fotos, código e configuração. A chave privada fica fora do servidor. O painel distingue geração, envio ao Drive e relatório de restauração; somente a administração geral tem acesso. Consulte [o procedimento completo](BACKUP_RECUPERACAO.md) e [o prompt de implementação](PROMPT_BACKUP_PROFISSIONAL.txt).
 
-render.yaml serve como referência para configurar o serviço existente; não crie outro serviço acidentalmente. Não envie bancos, CSV de alunos, documentos ou arquivos .env ao GitHub.
-
+A automação do Google Drive exige OAuth institucional configurado no servidor. Downloads para computador e cópias em HD são operações separadas. A restauração pela ferramenta técnica recusa diretórios existentes. O comando legado de manutenção cria somente cópia do banco. Não envie bancos, documentos, backups ou segredos ao GitHub.
 
 ## Professores e ocorrências
 

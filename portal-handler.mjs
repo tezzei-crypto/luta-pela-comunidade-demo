@@ -1,3 +1,4 @@
+import {handleBackups} from './backup-handler.mjs';
 import {handleClassEvidence} from './class-evidence-handler.mjs';
 import {sameOrigin} from './request-origin.mjs';
 import {handleSiteEditor} from './site-editor-handler.mjs';
@@ -53,6 +54,7 @@ export async function handlePortal(req,env=process.env,injectedStore){
   const administrativeUnits=staff&&store.administrativeScope?await store.administrativeScope(actor):undefined;
   if(role==='secretary'&&!store.forActor)fail('Separação por núcleo indisponível. Procure a administração.',503);
   if(store.forActor)store=store.forActor(actor);
+  const backupResponse=await handleBackups({req,route,method,store,actor,requireRole});if(backupResponse)return backupResponse;
   const editorResponse=await handleSiteEditor({req,route,method,url,store,actor,requireRole});if(editorResponse)return editorResponse;
   if(route==='/sync'&&method==='GET')return json(await store.systemRevision(actor));
   if(route==='/diagnostics'&&method==='GET'){requireRole('admin');return json(store.diagnosticEvents(actor,{support_id:url.searchParams.get('support_id')||'',kind:url.searchParams.get('kind')||'',page:Number(url.searchParams.get('page')||0)}));}
