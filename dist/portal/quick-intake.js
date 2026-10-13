@@ -9,7 +9,7 @@ export async function mountQuickIntake({api,el,field,action,notice},box,classId)
   if(!box.isConnected)return;list.replaceChildren(el('h4',fresh.visitors.filter(v=>v.present).length+' visitante(s) com presença registrada'));
   for(const v of fresh.visitors){const row=el('div',undefined,{class:'visitor-row'});row.append(el('strong',v.name),el('span',v.present?'Presença salva':'Sem presença nesta aula'));
    if(v.updated_at)row.append(el('small','Último lançamento: '+v.updated_by_name+' · '+new Date(v.updated_at).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'})));
-   if(editable&&(v.status==='pending'||v.present)){const b=el('button',v.present?'Desfazer presença':'Marcar presença',{type:'button',class:'secondary'});b.addEventListener('click',action(async()=>{await api('/classes/'+classId+'/visitors',{method:'POST',data:{intake_id:v.id,present:!v.present,version:v.version}});await refresh();document.dispatchEvent(new Event('portal:attendance-saved'));feedback.textContent=v.present?'Presença desfeita. O pré-cadastro continua salvo.':'Presença salva.';}));row.append(b)}
+   if(editable&&(v.status==='pending'||v.present)){const b=el('button',v.present?'Desfazer presença':'Marcar presença',{type:'button',class:'secondary'});b.addEventListener('click',action(async()=>{await api('/classes/'+classId+'/visitors',{method:'POST',data:{intake_id:v.id,present:!v.present,version:v.version}});await refresh();document.dispatchEvent(new Event('portal:quick-intake-saved'));feedback.textContent=v.present?'Presença desfeita. O pré-cadastro continua salvo.':'Presença salva.';}));row.append(b)}
    list.append(row);
   }
  }
@@ -24,8 +24,8 @@ export async function mountQuickIntake({api,el,field,action,notice},box,classId)
    const values=Object.fromEntries(new FormData(form));const payload={...values,age:values.age===''?null:Number(values.age),id:requestId,class_id:classId};
    const saved=await api('/quick-intakes',{method:'POST',data:payload});requestId=crypto.randomUUID();form.reset();
    feedback.textContent=values.name+': '+(saved.present?'aluno e presença salvos. Pode cadastrar o próximo.':'cadastro já salvo; confira a presença na lista.');notice(feedback.textContent);
-   document.dispatchEvent(new Event('portal:attendance-saved'));
-   try{await refresh()}catch{feedback.textContent+=' A lista não pôde ser atualizada. Use Atualizar visitantes.';}
+   document.dispatchEvent(new Event('portal:quick-intake-saved'));
+   try{if(Array.isArray(saved.visitors))render(saved);else await refresh()}catch{feedback.textContent+=' A lista não pôde ser atualizada. Use Atualizar visitantes.';}
    setTimeout(()=>{if(name.isConnected)name.focus({preventScroll:true})},0);
   }));
   details.append(form);details.addEventListener('toggle',()=>{if(details.open)name.focus({preventScroll:true})});box.append(details,feedback);
@@ -33,7 +33,7 @@ export async function mountQuickIntake({api,el,field,action,notice},box,classId)
   const delivered=el('details');delivered.append(el('summary','Confirmar que a aula aconteceu'));
   const delivery=el('button',data.delivery.held?'Retirar confirmação de realização':'Confirmar aula realizada',{type:'button',class:'secondary'});
   delivered.append(el('p','Use quando a aula aconteceu, inclusive se ninguém compareceu. Presenças já salvas continuam contando no resumo. Se não houve aula, registre o cancelamento.'),delivery);
-  delivery.addEventListener('click',action(async()=>{await api('/classes/'+classId+'/delivery',{method:'POST',data:{held:!data.delivery.held,version:data.delivery.version}});await mountQuickIntake({api,el,field,action,notice},box,classId);document.dispatchEvent(new Event('portal:attendance-saved'));}));box.append(delivered);
+  delivery.addEventListener('click',action(async()=>{await api('/classes/'+classId+'/delivery',{method:'POST',data:{held:!data.delivery.held,version:data.delivery.version}});await mountQuickIntake({api,el,field,action,notice},box,classId);document.dispatchEvent(new Event('portal:quick-intake-saved'));}));box.append(delivered);
  }
  box.append(list);render(data);const update=el('button','Atualizar visitantes',{type:'button',class:'secondary'});update.addEventListener('click',action(refresh));box.append(update);
 }
