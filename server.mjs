@@ -19,6 +19,9 @@ await initializePortal(process.env);
 let attendanceJobRunning=false;
 async function attendanceJob(){if(attendanceJobRunning||!portalConfigured(process.env))return;attendanceJobRunning=true;try{const store=createStore(process.env);await store.deliverAttendanceNotices();await store.deliverRollcallNotices();await store.deliverAppointmentNotices();await store.deliverWhatsappNotices()}catch{console.error('Não foi possível concluir a verificação automática de frequência; nova tentativa em cinco minutos.')}finally{attendanceJobRunning=false}}
 setInterval(attendanceJob,300000).unref();setTimeout(attendanceJob,1000).unref();
+let operationsJobRunning=false;
+async function operationsJob(){if(operationsJobRunning||!portalConfigured(process.env))return;operationsJobRunning=true;try{await createStore(process.env).deliverOperationsNotices()}catch{console.error('Resumo de atividades pendente; nova tentativa em cinco minutos.')}finally{operationsJobRunning=false}}
+setInterval(operationsJob,300000).unref();setTimeout(operationsJob,30000).unref();
 let recoveryJobRunning=false;
 async function recoveryJob(){if(recoveryJobRunning||!portalConfigured(process.env))return;recoveryJobRunning=true;try{const store=createStore(process.env);try{await store.backupTick()}catch{console.error('Backup não concluído. Confira o painel Backup e recuperação.')}await store.deliverBackupNotices()}catch{console.error('Não foi possível conferir os avisos de backup. Consulte o painel.')}finally{recoveryJobRunning=false}}
 setInterval(recoveryJob,300000).unref();setTimeout(recoveryJob,15000).unref();
@@ -71,7 +74,7 @@ async function serveRequest(req,res){
   // One shared entry point also covers staff portals that do not load app.js.
   const page=url.pathname.replace(/index\.html$/,'');let source=await fs.promises.readFile(file,'utf8');
   if(portalConfigured(process.env)&&editorPages.some(p=>p.page===page)){source=createStore(process.env).editorPublicHtml(page);res.setHeader('Cache-Control','no-store');}
-  const html=withSocialPreview(source,page);res.end(html.replace(/<\/body>/i,'<script src="/contact-widget.js" defer></script>'+(/^\/(administracao|portal|professor|psicologia|assistencia-social)\//.test(url.pathname)?'<script src="/portal/diagnostics.js" defer></script><script src="/portal/site-editor.js" defer></script><script src="/portal/backups.js" defer></script>':'')+'</body>'));
+  const html=withSocialPreview(source,page);res.end(html.replace(/<\/body>/i,'<script src="/contact-widget.js" defer></script>'+(/^\/(administracao|portal|professor|psicologia|assistencia-social)\//.test(url.pathname)?'<script src="/portal/diagnostics.js" defer></script><script src="/portal/site-editor.js" defer></script><script src="/portal/backups.js" defer></script><script src="/portal/operations.js" defer></script>':'')+'</body>'));
  }else fs.createReadStream(file).pipe(res);
 }
 http.createServer((req,res)=>{const diagnostic=observeRequest(req,res,process.env);serveRequest(req,res).catch(error=>diagnostic.fail(error))}).listen(port,process.env.HOST||'0.0.0.0',function(){console.log(`Local: http://127.0.0.1:${this.address().port}`)});

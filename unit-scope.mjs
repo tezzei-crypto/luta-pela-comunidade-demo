@@ -50,6 +50,11 @@ export function scopedSecretaryStore(api,actor,{scope,get,all}) {
  const allow=(names,check=()=>{})=>{for(const n of names.split(' '))rules[n]=async(...args)=>{check(...args);return api[n](...args)}};
  allow('systemRevision audit attendanceAuthority rollcallSettings absencePolicy absenceAttention attendanceReport attendanceReportOptions attendanceAlerts attendanceAlert attendanceFollowup attendanceRecipients rollcallIssues');
  allow('links',id=>{if(id!==actor)deny()});
+ allow('quickCreate',(_,p)=>record('classes',p.class_id));
+ allow('quickList',(_,u)=>unit(u));
+ allow('quickUpdate',(_,id)=>record('quick_intakes',id));
+ allow('visitors markVisitor classDelivery',(_,id)=>record('classes',id));
+ allow('operationsSummary');
  allow('member',id=>{if(id!==actor)deny()});
  rules.availableUnits=async()=>scope.units(actor);
  rules.students=async ids=>{if(ids)ids.forEach(student);return (await api.students(ids)).filter(s=>scope.permits(actor,studentUnit(s.id)))};

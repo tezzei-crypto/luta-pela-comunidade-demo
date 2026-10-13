@@ -29,3 +29,18 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}input,select,textarea{f
 
 @media(max-width:760px){body[data-portal-role=teacher] main{padding:10px}body[data-portal-role=teacher] #workspace{padding:8px}body[data-portal-role=teacher] h1{font-size:1.6rem}body[data-portal-role=teacher] #notice{padding:10px}body[data-portal-role=teacher] main>.eyebrow,body[data-portal-role=teacher] main>h1+p{display:none}body[data-portal-role=teacher] #attendance-area>h2{display:none}body[data-portal-role=teacher] #panel-title{font-size:1.2rem;margin-bottom:8px}}
 @media(max-width:380px){.attendance-options{grid-template-columns:repeat(2,minmax(0,1fr))}.attendance-choice[data-status=unmarked]{grid-column:auto}}
+
+/* Quick intake: one column and large touch targets at every viewport. */
+.quick-intake{padding:16px;border:2px solid #16644e;border-radius:14px;background:#f4fbf7;margin:16px 0}
+.quick-entry{border:1px solid #a7c5b7;border-radius:12px;padding:12px;margin:12px 0;background:#fff}
+.quick-entry>summary{font-weight:700;min-height:48px;display:flex;align-items:center;cursor:pointer}
+.quick-entry form{display:flex;flex-direction:column;gap:10px;max-width:560px}
+.quick-entry input,.quick-entry select,.quick-entry button,.visitor-row button{min-height:48px;font-size:16px;width:100%;box-sizing:border-box}
+.quick-entry input[type=checkbox]{min-height:24px;width:24px;flex-shrink:0}
+.quick-entry .check-label{display:flex;gap:10px;align-items:center}
+.quick-entry form details{padding:10px;background:#f3f6f8;border-radius:8px}
+.quick-entry form details label,.quick-entry form details input{display:block;margin-bottom:8px}
+.quick-save{background:#106043;color:#fff;margin-top:8px}
+.visitor-row{display:grid;gap:8px;padding:14px 0;border-bottom:1px solid #c7d8cd;overflow-wrap:anywhere}
+.visitor-row small{color:#3c5048}.operation-lesson{padding:16px;border:1px solid #c3d0d9;border-radius:12px;margin:16px 0}
+#operations-content,#quick-queue-list{overflow-wrap:anywhere}
