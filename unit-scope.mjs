@@ -72,7 +72,8 @@ export function scopedSecretaryStore(api,actor,{scope,get,all}) {
  allow('group',(_,id)=>record('class_groups',id));
  allow('saveGroup',(_,id,p)=>{unit(p.unit);if(id)record('class_groups',id)});
  allow('createClass createWorkforceSession',(_,p)=>{if(p.group_id)record('class_groups',p.group_id);else unit(p.unit)});
- allow('classEvidence addClassPhoto classPhoto reviewClassPhoto attendance attendanceHistory markAttendance cancelClass',(_,id)=>record('classes',id));
+ allow('classEvidence addClassPhoto classPhoto reviewClassPhoto classReviewTask saveClassReview attendance attendanceHistory markAttendance cancelClass',(_,id)=>record('classes',id));
+ allow('classReviewQueue',(_,p)=>{if(p?.unit)unit(p.unit)});
  allow('workforceAttendance markWorkforceAttendance workforceHistory',(_,id)=>record('workforce_sessions',id));
  allow('report updateReport',(_,id)=>record('reports',id));
  allow('createReport',(_,p)=>unit(p.unit));

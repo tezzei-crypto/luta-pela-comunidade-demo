@@ -2,6 +2,10 @@ import {fail} from './portal-domain.mjs';
 const headers={'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer'};
 const json=(p,status=200)=>Response.json(p,{status,headers});
 export async function handleClassEvidence({req,route,method,store,actor}) {
+ if(route==='/class-reviews'&&method==='GET'){const url=new URL(req.url);return json(await store.classReviewQueue(actor,Object.fromEntries(url.searchParams)));}
+ const task=route.match(/^\/class-reviews\/([a-f0-9-]{36})$/i);
+ if(task&&method==='GET')return json(await store.classReviewTask(actor,task[1]));
+ if(task&&method==='POST'){let p;try{p=await req.json()}catch{fail('Dados inválidos.')}return json({...await store.saveClassReview(actor,task[1],p),message:'Conferência da aula registrada com autoria e histórico.'});}
  const m=route.match(/^\/classes\/([a-f0-9-]{36})\/photos(?:\/([a-f0-9-]{36}))?(\/review)?$/i);
  if(!m)return;
  const [,id,photo,review]=m;
