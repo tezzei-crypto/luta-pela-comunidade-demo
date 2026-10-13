@@ -1,0 +1,27 @@
+PROMPT PROFISSIONAL — LUTA PELA COMUNIDADE
+Objetivo: permitir que um professor sozinho registre, pelo celular e durante a aula, um aluno ainda sem matrícula. Ao tocar “Salvar aluno e presença”, criar o pré-cadastro e registrar presença naquela aula, na mesma transação. Após confirmação, preparar o campo para o próximo aluno.
+
+REQUISITOS
+1. Reutilizar núcleo, turma e data da chamada. Exigir apenas nome; oferecer idade informada, nome e telefone do responsável como opcionais. Não inventar nascimento, CPF, consentimento, documentos, autorização ou matrícula.
+2. Professor habilitado atua apenas nas suas turmas. Administradores e secretaria geral podem lançar. Secretaria de núcleo consulta e completa os pré-cadastros do próprio núcleo, sem ganhar permissão para lançar presença.
+3. Manter presença de visitante separada da matrícula formal; registrar autor, data, versão e histórico. Permitir desfazer presença sem excluir pré-cadastro. Bloquear lançamento em aula cancelada ou futura.
+4. Repetição do mesmo envio não duplica aluno nem presença; mudança no conteúdo de protocolo já usado deve falhar. Verificar nomes normalizados para apontar possível duplicata; homônimos exigem conferência humana.
+5. Uma coluna no celular, rótulos visíveis, botões de pelo menos 48 px, teclado adequado, opcionais recolhidos, mensagem de sucesso próxima à ação e campos preservados quando houver erro. Não afirmar que salvou antes da confirmação do servidor; não prometer operação offline.
+6. Secretaria recebe fila com dados mínimos, abre ficha completa para análise e, após aprovação documental, vincula o ID conferido. Não aprovar automaticamente nem mudar listas históricas de turmas. Evitar dupla contagem quando visitante vira matriculado.
+7. Resumo administrativo por núcleo e dia: aulas com realização/presença registrada, canceladas e sem confirmação; presenças de matriculados e visitantes; participações e pessoas distintas; menores de 18 com idade informada e idade desconhecida; atendimentos com situação Realizado, agendados sem conclusão e pré-cadastros pendentes. Zero, ausência e falta de informação são estados diferentes.
+8. Painel atualiza a cada 30 segundos enquanto visível. Enviar individualmente aos administradores ativos resumo diário às 8h de Brasília do dia anterior, sem nomes, contatos ou conteúdo clínico. Persistir fila; revalidar destinatários; repetir erros transitórios com conteúdo e idempotência fixos; expirar repetição antes da janela do provedor; tornar falhas visíveis. Aceitação não significa entrega ou leitura.
+9. Testar atomicidade, validação, autorização, CSRF, duplicidade, sessão revogada, concorrência, desfazer, cancelamento, conversão, cálculo por data e núcleo, email e recuperação de falhas. Usar exclusivamente dados sintéticos isolados. Executar a suíte completa, conferir celular e computador, publicar no serviço existente e verificar build, saúde e versão publicada.
+
+FUNDAMENTO
+Evidência empírica: Seckler et al., CHI 2014, experimento de formulários com 65 participantes. As diretrizes combinadas melhoraram tempo de conclusão, tentativas e satisfação; não implica medir a mesma redução de tempo neste projeto.
+https://research.google/pubs/designing-usable-web-forms-empirical-evaluation-of-web-form-improvement-guidelines/
+Normas/recomendações de acessibilidade: W3C/WAI, formulários curtos, rótulos e mensagens claras; WCAG 2.2, alvo de 44 px no critério aprimorado. Projeto adota 48 px; não é declaração de conformidade total.
+https://www.w3.org/WAI/tutorials/forms/
+https://www.w3.org/WAI/tutorials/forms/labels/
+https://www.w3.org/WAI/WCAG22/Understanding/target-size-enhanced.html
+Referência funcional educacional: Moodle Attendance, separação de sessões, estados de presença e relatórios.
+https://docs.moodle.org/400/en/Attendance
+Escolhas de gestão, não leis científicas: presença automática na ação explícita de salvar, dados opcionais, autoridade dos perfis e horário do resumo.
+
+ENTREGA
+Entregar código, regressões, evidência de publicação, caminho para uso e limitações reais. Não chamar pré-cadastro de matrícula aprovada nem tratar cadastros, agendamentos ou chamadas pendentes como comparecimento comprovado.

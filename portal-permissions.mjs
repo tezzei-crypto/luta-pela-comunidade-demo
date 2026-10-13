@@ -10,6 +10,7 @@ export function requireRouteAccess(role,route,method){
   return;
  }
  if(role==='admin'||role==='guardian')return;
+ if(role==='teacher'&&(route==='/quick-intakes'&&method==='POST'||/^\/classes\/[a-f0-9-]{36}\/visitors$/i.test(route)&&['GET','POST'].includes(method)||/^\/classes\/[a-f0-9-]{36}\/delivery$/i.test(route)&&method==='POST'))return;
  if(role==='teacher'&&/^\/classes\/[a-f0-9-]{36}\/attendance-history$/i.test(route)&&method==='GET')return;
  if(route==='/sync'&&method==='GET')return;
  if((role==='teacher'||CARE_ROLES.includes(role))&&route==='/attendance-alerts/attention'&&method==='GET')return;
