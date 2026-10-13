@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import {generateKeyPairSync,createHash,randomBytes,publicEncrypt,createCipheriv,constants} from 'node:crypto';
+import {generateKeyPairSync,createHash,randomBytes,randomUUID,publicEncrypt,createCipheriv,constants} from 'node:crypto';
 import {gzipSync} from 'node:zlib';
 import {DatabaseSync} from 'node:sqlite';
 import {Header} from 'tar';
@@ -12,6 +12,8 @@ import {createSqliteStore} from './portal-sqlite.mjs';
 import {handlePortal} from './portal-handler.mjs';
 import {createRecoveryPackage,restoreRecoveryPackage,digestFile,publicKeyInfo,safeRelative,recoverySpace} from './backup-core.mjs';
 import {uploadDriveBackup} from './backup-drive.mjs';
+import {fixtureTeacher} from './school-fixtures.mjs';
+import {localDay} from './professional-tools.mjs';
 const keys=generateKeyPairSync('rsa',{modulusLength:3072,publicKeyEncoding:{type:'spki',format:'pem'},privateKeyEncoding:{type:'pkcs8',format:'pem'}}),hash=x=>createHash('sha256').update(x).digest('hex');
 function fixture(t){
  const root=fs.mkdtempSync(path.join(process.platform==='win32'?import.meta.dirname:os.tmpdir(),'.backup-test-')),dataDir=path.join(root,'source'),appRoot=path.join(root,'app');fs.mkdirSync(appRoot);fs.mkdirSync(path.join(appRoot,'dist'));fs.writeFileSync(path.join(appRoot,'server.mjs'),'// fixture code');fs.writeFileSync(path.join(appRoot,'package-lock.json'),'{}');fs.writeFileSync(path.join(appRoot,'dist','index.html'),'<h1>Fixture</h1>');fs.writeFileSync(path.join(appRoot,'.env'),'excluded-secret');
@@ -29,6 +31,12 @@ test('pacote completo restaura banco, documentos, código e configuração; não
  const r=await restoreRecoveryPackage({file:p.file,privateKey:keys.privateKey,targetDir:path.join(f.root,'restored')});assert.equal(r.integrity,'ok');assert.equal(r.counts.students,1);assert.equal(r.objects,1);assert.equal(r.counts.sessions,0);assert.equal(r.sha256,p.sha256);assert.equal(fs.readFileSync(path.join(r.target,'data/objects/fixture.pdf'),'utf8'),'%PDF-1.7 confidential fixture');assert.equal(fs.existsSync(path.join(r.target,'app/.env')),false);
  assert.equal(JSON.parse(fs.readFileSync(path.join(r.target,'configuration.json'))).PORTAL_SECRET,f.env.PORTAL_SECRET);assert.equal(f.db.prepare('SELECT count(*) n FROM sessions').get().n,1);assert.equal((await f.store.user('a'.repeat(43))).id,f.admin);
  assert.deepEqual(fs.readdirSync(path.join(f.root,'packages')),[p.name]);
+});
+test('backup integrado recupera pré-cadastro, presença, confirmação de aula e autoria sem modificar produção',async t=>{
+ const f=fixture(t),teacher=await fixtureTeacher(f.store,f.admin),group=await f.store.saveGroup(f.admin,null,{unit:'amavale',label:'Aula fictícia',students:['UND1_000001'],teachers:[teacher.user_id],weekdays:[0,1,2,3,4,5,6],start_time:'15:00',end_time:'16:00',active:true,version:0}),lesson=await f.store.createClass(f.admin,{group_id:group.id,day:localDay()}),id=randomUUID();
+ await f.store.quickCreate(teacher.user_id,{id,class_id:lesson.id,name:'Visitante Fictício',age:11});await f.store.classDelivery(teacher.user_id,lesson.id,{held:true,version:0});
+ const p=await f.create(),restored=await restoreRecoveryPackage({file:p.file,privateKey:keys.privateKey,targetDir:path.join(f.root,'restored-quick')}),db=new DatabaseSync(path.join(restored.target,'data/portal.sqlite'));
+ try{assert.equal(restored.integrity,'ok');assert.equal(restored.counts.quick_intakes,1);assert.equal(restored.counts.visitor_attendance,1);assert.equal(db.prepare('SELECT created_by FROM quick_intakes WHERE id=?').get(id).created_by,teacher.user_id);assert.equal(db.prepare('SELECT present FROM visitor_attendance WHERE intake_id=?').get(id).present,1);assert.equal(db.prepare('SELECT held FROM class_delivery WHERE class_id=?').get(lesson.id).held,1);assert.equal(db.prepare('SELECT actor FROM visitor_changes WHERE intake_id=?').get(id).actor,teacher.user_id);}finally{db.close()}
 });
 test('chave incorreta, truncamento e alteração de ciphertext falham sem destino parcial',async t=>{
  const f=fixture(t),p=await f.create(),bytes=fs.readFileSync(p.file),wrong=generateKeyPairSync('rsa',{modulusLength:3072});

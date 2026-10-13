@@ -1,10 +1,11 @@
 'use strict';
 const operationLabels={held:'Realização/presença registrada',cancelled:'Cancelada',unconfirmed:'Aguardando confirmação'};
-let operationsBusy=false;
+let operationsRequest=0,quickQueueRequest=0;
 async function loadOperations(){
- if(operationsBusy||!['admin','secretary'].includes(me?.role)||!$('operations-date'))return;
- operationsBusy=true;const day=$('operations-date').value;
- try{const r=await api('/operations?day='+day);if(!$('operations-content')||!me||$('operations-date').value!==day)return;const box=$('operations-content'),t=r.totals;box.replaceChildren();
+ if(!['admin','secretary'].includes(me?.role)||!$('operations-date'))return;
+ const request=++operationsRequest,day=$('operations-date').value;
+ if($('operations-content').dataset.day!==day){$('operations-content').dataset.day=day;$('operations-content').replaceChildren(el('p','Consultando atividades da data selecionada…',{role:'status'}));}
+ const r=await api('/operations?day='+day);if(request!==operationsRequest||!$('operations-content')||!me||$('operations-date').value!==day)return;const box=$('operations-content'),t=r.totals;box.replaceChildren();
   box.append(el('p','Atualizado às '+new Date(r.generated_at).toLocaleTimeString('pt-BR',{timeZone:'America/Sao_Paulo'})+' · horário de Brasília. Consulta automática enquanto este painel estiver aberto.',{role:'status'}));
   const cards=el('div',undefined,{class:'cards'});for(const [label,value]of [['Aulas com realização/presença',t.held],['Aguardando confirmação',t.unconfirmed],['Aulas canceladas',t.cancelled],['Participações registradas',t.participations],['Cadastros distintos com presença',t.unique_people],['Menores de 18 com idade informada',t.children],['Pessoas sem idade informada',t.age_unknown],['Atendimentos realizados',t.appointments_completed],['Atendimentos sem conclusão',t.appointments_waiting],['Pré-cadastros para concluir',r.pending_intakes]]){const c=el('article',undefined,{class:'card'});c.append(el('strong',String(value)),el('p',label));cards.append(c)}box.append(cards);
   box.append(el('p',t.registered_present+' presenças na chamada de matriculados + '+t.visitors_present+' de visitantes. Uma pessoa em duas aulas gera duas participações. IDs de núcleos diferentes não são conciliados automaticamente. Idades dos pré-cadastros ainda não foram conferidas. Chamada pendente não significa falta; agendamento não significa atendimento realizado.'));
@@ -12,10 +13,11 @@ async function loadOperations(){
   if(!r.lessons.length)box.append(el('p','Nenhuma aula prevista ou aberta nesta data.'));
   for(const u of r.units)box.append(el('p',classUnits[u.unit]+': '+u.appointments_completed+' atendimento(s) com situação Realizado.'));
   if(r.notifications){const n=r.notifications;box.append(el('h3','Resumo por email para os administradores'),el('p','Todos os dias a partir das 8h (Brasília): resumo do dia anterior. Novos lançamentos continuam atualizando este painel.'),el('p','Destinatários: '+(n.recipients.join(', ')||'nenhum administrador ativo.')),el('p',!n.configured?'Email ainda não configurado.':n.last_accepted?'Último resumo aceito pelo provedor: '+n.last_accepted.day+' · '+new Date(n.last_accepted.accepted_at).toLocaleString('pt-BR')+'.':'Email configurado; aguardando envio do resumo.'),el('p',n.pending+' envio(s) aguardando confirmação; '+n.failed+' envio(s) exigindo conferência. Aceitação pelo provedor não comprova entrega ou leitura.'));}
- }finally{operationsBusy=false;}
 }
 async function loadQuickQueue(){
- const unit=$('quick-queue-unit').value,{intakes}=await api('/quick-intakes?unit='+unit);if(!$('quick-queue-list'))return;const box=$('quick-queue-list');box.replaceChildren();
+ const request=++quickQueueRequest,unit=$('quick-queue-unit').value;
+ if($('quick-queue-list').dataset.unit!==unit){$('quick-queue-list').dataset.unit=unit;$('quick-queue-list').replaceChildren(el('p','Consultando pré-cadastros do núcleo selecionado…',{role:'status'}));}
+ const {intakes}=await api('/quick-intakes?unit='+unit);if(request!==quickQueueRequest||!$('quick-queue-list')||$('quick-queue-unit').value!==unit)return;const box=$('quick-queue-list');box.replaceChildren();
  for(const r of intakes){const card=el('details',undefined,{class:'quick-entry'});card.append(el('summary',r.name+' · '+({pending:'Concluir matrícula',linked:'Vinculado à matrícula',archived:'Arquivado'}[r.status])));card.append(el('p',r.group_label+' · cadastrado em '+new Date(r.created_at).toLocaleString('pt-BR')));
   const form=el('form');field(form,'Nome do aluno','name',r.name).required=true;field(form,'Idade informada (opcional)','age',r.age,{type:'number',min:0,max:120});field(form,'Nome do responsável (opcional)','guardian_name',r.guardian_name);field(form,'Telefone com DDD (opcional)','phone',r.phone,{type:'tel'});field(form,'Situação do pré-cadastro','status',r.status,{options:{pending:'Aguardando matrícula completa',linked:'Vincular a aluno já aprovado',archived:'Arquivar pré-cadastro'}});field(form,'ID do aluno aprovado (somente para vincular)','student_id',r.student_id||'');
   const check=el('label',undefined,{class:'check-label'}),checkbox=el('input',undefined,{type:'checkbox',name:'identity_checked'});check.append(checkbox,document.createTextNode('Conferi a identidade e o ID da matrícula para vincular.'));form.append(check,el('button','Salvar conferência'));
@@ -32,4 +34,4 @@ document.addEventListener('portal:loaded',action(async()=>{
 }));
 setInterval(()=>{if(!document.hidden&&$('operations-area')?.classList.contains('is-current'))loadOperations().catch(()=>{const box=$('operations-content');if(box&&!box.querySelector('.operations-stale'))box.prepend(el('p','Não foi possível atualizar. Os números abaixo podem estar desatualizados. Use Atualizar atividades.',{class:'form-error operations-stale',role:'status'}));});},30000);
 for(const event of ['portal:attendance-saved','portal:quick-intake-saved'])document.addEventListener(event,()=>{if($('operations-area')?.classList.contains('is-current'))loadOperations().catch(()=>{});});
-document.addEventListener('portal:logout',()=>{$('operations-area')?.remove();$('quick-intakes-area')?.remove();});
+document.addEventListener('portal:logout',()=>{operationsRequest++;quickQueueRequest++;$('operations-area')?.remove();$('quick-intakes-area')?.remove();});

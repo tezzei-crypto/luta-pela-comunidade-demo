@@ -24,15 +24,15 @@ async function dashboard(){
  }
  $('dashboard-tables').replaceChildren(el('h3','Alunos por núcleo'),tableOf(['Núcleo','Alunos','Aprovados'],d.units.map(u=>[unitNames[u.unit]||u.unit,u.students,u.approved])),el('p',`${d.students} alunos no cadastro · ${d.documents} arquivos vinculados · ${d.registrations.period_received} inscrições recebidas no período.`));
 }
-async function registrations(){
- const p=await api('/registrations?status='+$('registration-status').value+'&page='+registrationPage),box=$('registration-list');box.replaceChildren();
+async function registrations(){const request=Symbol(),status=$('registration-status').value,page=registrationPage;registrations.request=request;
+ const p=await api('/registrations?status='+status+'&page='+page),box=$('registration-list');if(registrations.request!==request||$('registration-status').value!==status||registrationPage!==page)return;box.replaceChildren();
  for(const r of p.registrations){const b=el('button',r.student_name+' · '+unitNames[r.unit]+' · '+new Date(r.created_at).toLocaleDateString('pt-BR'),{class:'registration-row secondary'});b.addEventListener('click',action(()=>review(r.id)));box.append(b)}
  if(!p.registrations.length)box.append(el('p','Nenhuma inscrição nesta situação.'));
  $('registration-page').textContent='Página '+(registrationPage+1);$('registrations-previous').disabled=registrationPage===0;$('registrations-next').disabled=!p.has_more;
  $('registrations-previous').dataset.locked=String(registrationPage===0);$('registrations-next').dataset.locked=String(!p.has_more);
 }
-async function review(id){
- const r=(await api('/registrations/'+id)).registration,box=$('registration-detail');box.hidden=false;box.replaceChildren(el('h3',r.student_name),el('p',`${r.age} anos · ${unitNames[r.unit]} · ${decisionNames[r.status]}`),el('p','Protocolo: '+r.id,{class:'muted'}),el('p','Responsável: '+r.guardian_name+' · '+r.relationship),phoneContact(r.guardian_email+' · '+r.guardian_phone,r.guardian_phone,r.guardian_name));
+async function review(id){const request=Symbol();review.request=request;
+ const r=(await api('/registrations/'+id)).registration,box=$('registration-detail');if(review.request!==request||!box)return;box.hidden=false;box.replaceChildren(el('h3',r.student_name),el('p',`${r.age} anos · ${unitNames[r.unit]} · ${decisionNames[r.status]}`),el('p','Protocolo: '+r.id,{class:'muted'}),el('p','Responsável: '+r.guardian_name+' · '+r.relationship),phoneContact(r.guardian_email+' · '+r.guardian_phone,r.guardian_phone,r.guardian_name));
  documentChecklist(box,r.documents);if(r.source==='staff')box.append(el('p','Origem: cadastro administrativo · '+r.source_reference));
  if(r.reason)box.append(el('p','Última decisão: '+r.reason));if(r.student_id){box.append(el('p','ID vinculado: '+r.student_id));const open=el('button','Abrir ficha do aluno aprovado');open.addEventListener('click',action(()=>detail(r.student_id)));box.append(open)}
  for(const d of r.documents){const b=el('button','Baixar '+(kinds[d.kind]||'documento'),{class:'secondary'});b.addEventListener('click',action(async()=>download(await api('/registrations/'+id+'/documents/'+d.id,{blob:true}),'inscricao-'+d.id+(d.mime==='application/pdf'?'.pdf':d.mime==='image/png'?'.png':'.jpg'))));box.append(b)}

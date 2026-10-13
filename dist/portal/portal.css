@@ -25,7 +25,7 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}input,select,textarea{f
 
 /* Professor: touch-first attendance with explicit drafts and a reachable save action. */
 .attendance-toolbar{display:grid;grid-template-columns:minmax(0,1fr);gap:8px;margin:12px 0}.attendance-toolbar label{margin:0}.attendance-toolbar button{min-height:48px;margin:0}.attendance-toolbar p{margin:0}.today-class{display:block;min-height:56px;width:100%;text-align:left;line-height:1.4}.attendance-person{min-width:0;scroll-margin-block:95px 150px}.attendance-choice[data-status=unmarked]{grid-column:1/-1;min-height:44px;background:#f2f5f8;color:#243e52;font-size:.9rem}.attendance-choice[data-status=unmarked][aria-pressed=true]{border:1px solid #71879b;color:#243e52}.attendance-choice:focus-visible{outline:3px solid #235da5;outline-offset:3px}.attendance-attribution{margin:6px 0!important;padding:0!important;border:0!important}.attendance-attribution summary{font-size:.85rem;min-height:44px!important;padding:10px 0!important}.attendance-attribution p{font-size:.85rem}.attendance-form{padding-bottom:16px}#today-classes:empty{display:none}
-@media(max-width:760px){#attendance-area,#class-detail{padding:10px!important}#class-detail{padding-bottom:170px!important}#class-detail .save-call{position:fixed;bottom:0;left:0;right:0;padding:10px 12px max(12px,env(safe-area-inset-bottom));border-top:2px solid #a6b7c5;z-index:6;box-shadow:0 -5px 15px #142d4220}#class-detail .save-call button{min-height:54px}.attendance-options{gap:6px}.attendance-choice{font-size:.88rem;padding:8px 3px;min-height:52px}.attendance-person legend{font-size:1.05rem}.attendance-toolbar input{font-size:16px;min-height:48px}body:has(#attendance-area.is-current #class-detail:not([hidden])) .secretary-contact{display:none}}
+@media(max-width:760px){#attendance-area,#class-detail{padding:0!important}#class-detail{padding-bottom:170px!important}#class-detail .save-call{position:fixed;bottom:0;left:0;right:0;padding:10px 12px max(12px,env(safe-area-inset-bottom));border-top:2px solid #a6b7c5;z-index:6;box-shadow:0 -5px 15px #142d4220}#class-detail .save-call button{min-height:54px}.attendance-options{gap:6px}.attendance-choice{font-size:.88rem;padding:8px 3px;min-height:52px}.attendance-person legend{font-size:1.05rem}.attendance-toolbar input{font-size:16px;min-height:48px}body:has(#attendance-area.is-current #class-detail:not([hidden])) .secretary-contact{display:none}}
 
 @media(max-width:760px){body[data-portal-role=teacher] main{padding:10px}body[data-portal-role=teacher] #workspace{padding:8px}body[data-portal-role=teacher] h1{font-size:1.6rem}body[data-portal-role=teacher] #notice{padding:10px}body[data-portal-role=teacher] main>.eyebrow,body[data-portal-role=teacher] main>h1+p{display:none}body[data-portal-role=teacher] #attendance-area>h2{display:none}body[data-portal-role=teacher] #panel-title{font-size:1.2rem;margin-bottom:8px}}
 @media(max-width:380px){.attendance-options{grid-template-columns:repeat(2,minmax(0,1fr))}.attendance-choice[data-status=unmarked]{grid-column:auto}}
@@ -44,3 +44,16 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}input,select,textarea{f
 .visitor-row{display:grid;gap:8px;padding:14px 0;border-bottom:1px solid #c7d8cd;overflow-wrap:anywhere}
 .visitor-row small{color:#3c5048}.operation-lesson{padding:16px;border:1px solid #c3d0d9;border-radius:12px;margin:16px 0}
 #operations-content,#quick-queue-list{overflow-wrap:anywhere}
+/* Keep the teacher's working width instead of nesting several padded cards. */
+@media(max-width:760px){
+ main:has(#attendance-area.is-current){padding-inline:8px}
+ #workspace:has(#attendance-area.is-current){padding-inline:8px}
+ #workspace #attendance-area{padding-inline:0;border:0;background:transparent}
+ #workspace #class-detail{padding-inline:0;border:0;background:transparent}
+ #workspace #class-detail .quick-intake{padding:10px;margin-inline:0}
+ #class-detail .quick-intake>.quick-entry{padding:0;border:0;background:transparent}
+ #class-detail .quick-intake>.quick-entry>summary{padding:8px 0}
+ #class-detail .quick-intake .quick-entry form{width:100%;max-width:none}
+ #class-detail .quick-intake .quick-entry form details{padding:8px}
+ #class-detail:has(.quick-entry[open]) .save-call{position:static}
+}
