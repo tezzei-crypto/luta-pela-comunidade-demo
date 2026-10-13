@@ -57,3 +57,7 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}input,select,textarea{f
  #class-detail .quick-intake .quick-entry form details{padding:8px}
  #class-detail:has(.quick-entry[open]) .save-call{position:static}
 }
+
+/* Secretariat review uses the same private classroom records. */
+.review-filters{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:16px 0}.review-filters label{display:flex;flex-direction:column;gap:6px}.review-task-button{display:block;width:100%;text-align:left;white-space:normal;margin:12px 0;min-height:48px}.review-step{padding:16px;border:1px solid #bdcedb;border-radius:12px;margin:16px 0}.review-step h4{margin-top:0}.review-step button,.review-step select,.class-review-banner button{min-height:48px}.class-review-form textarea{width:100%;font:inherit;min-height:100px}.class-review-banner{padding:16px;background:#fff3ca;border-left:6px solid #946200;border-radius:10px;margin:16px 0}.class-review-banner[hidden]{display:none}.review-step .check-label{padding:10px 0;display:flex;gap:10px;align-items:flex-start}.review-step .check-label input{width:22px;height:22px;flex-shrink:0}.review-step img{max-width:100%;height:auto}
+@media(max-width:760px){.review-filters{grid-template-columns:1fr}.review-step{padding:12px}.review-step button{width:100%;white-space:normal;margin:6px 0}#class-review-area{padding:12px}#class-review-area input,#class-review-area select,#class-review-area textarea{font-size:16px;max-width:100%}.review-task-button{overflow-wrap:anywhere}}

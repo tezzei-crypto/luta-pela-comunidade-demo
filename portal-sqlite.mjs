@@ -1,5 +1,6 @@
 import {backupTools} from './backup-tools.mjs';
 import {quickIntake} from './quick-intake.mjs';
+import {classReview} from './class-review.mjs';
 import {operationsTools} from './operations-tools.mjs';
 import {whatsappNotices} from './whatsapp-notices.mjs';
 import {classEvidence} from './class-evidence.mjs';
@@ -89,7 +90,7 @@ export function createSqliteStore(env,{transport=fetch}={}){
   const seen=new Set();
   for(const raw of rows){const r=validateStudent(raw);if(seen.has(r.id))fail('ID repetido no lote.');seen.add(r.id);
    const old=get('SELECT * FROM students WHERE id=?',r.id);
-   
+
    if(m.role==='guardian'&&(!old||!get('SELECT 1 FROM links WHERE user_id=? AND student_id=?',actor,r.id)||['name','birth_date','status'].some(k=>r[k]!==old[k])))fail('Acesso não permitido.',403);
    if((old?.version||0)!==r.version)fail('Ficha alterada. Recarregue ou exporte um CSV atualizado.',409);
    const row={height_cm:null,weight_kg:null,kimono:'',rashguard:'',shorts:'',...r,version:r.version+1,updated_at:nowIso()};
@@ -207,6 +208,7 @@ export function createSqliteStore(env,{transport=fetch}={}){
  };
  Object.assign(api,quickIntake({db,get,all,run,tx,requireRole,scope,audit,project,requireUnit:teaching.requireUnit}));
  Object.assign(api,operationsTools({db,get,all,run,requireRole,scope,env,transport}));
+ Object.assign(api,classReview({db,get,all,run,tx,requireRole,scope,audit,evidence,env,transport}));
  Object.assign(api,systemSync({db,get,requireRole,secret:env.PORTAL_SECRET}),backupTools({db,get,all,run,tx,requireRole,audit,env,transport}));
  return api;
 }
