@@ -73,9 +73,10 @@ async function serveRequest(req,res){
  }
  if(!['GET','HEAD'].includes(req.method)){res.writeHead(405).end();return}
  if(url.pathname.startsWith('/portal')||url.pathname.startsWith('/administracao')||url.pathname.startsWith('/professor')||url.pathname.startsWith('/psicologia')||url.pathname.startsWith('/assistencia-social')){res.setHeader('Cache-Control','no-store');res.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; frame-src 'self' about:; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")}
+ if(['/transparencia','/transparencia/'].includes(url.pathname)&&['GET','HEAD'].includes(req.method)){res.writeHead(302,{Location:'/#transparencia'}).end();return}
  let file;try{file=path.resolve(root,'.'+decodeURIComponent(url.pathname))}catch{res.writeHead(400).end();return}
  if(!file.startsWith(root+path.sep)&&file!==root){res.writeHead(403).end();return}
- if(fs.existsSync(file)&&fs.statSync(file).isDirectory())file=path.join(file,'index.html');if(!fs.existsSync(file)){res.writeHead(404).end();return}
+ if(fs.existsSync(file)&&fs.statSync(file).isDirectory()){if(!url.pathname.endsWith('/')){res.writeHead(308,{Location:url.pathname+'/'+url.search}).end();return}file=path.join(file,'index.html');}if(!fs.existsSync(file)){res.writeHead(404).end();return}
  res.setHeader('Content-Type',({'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8','.png':'image/png','.jpeg':'image/jpeg','.jpg':'image/jpeg','.svg':'image/svg+xml'})[path.extname(file)]||'application/octet-stream');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','same-origin');if(req.method==='HEAD')res.end();else if(path.extname(file)==='.html'){
   // One shared entry point also covers staff portals that do not load app.js.
   const page=url.pathname.replace(/index\.html$/,'');let source=await fs.promises.readFile(file,'utf8');
