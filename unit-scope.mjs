@@ -51,7 +51,8 @@ export function scopedSecretaryStore(api,actor,{scope,get,all}) {
  allow('systemRevision audit attendanceAuthority rollcallSettings absencePolicy absenceAttention attendanceReport attendanceReportOptions attendanceAlerts attendanceAlert attendanceFollowup attendanceRecipients rollcallIssues');
  allow('links',id=>{if(id!==actor)deny()});
  allow('quickCreate',(_,p)=>record('classes',p.class_id));
- allow('quickList',(_,u)=>unit(u));
+ allow('quickList intakeQueue intakeNotificationStatus',(_,u)=>unit(u));
+ allow('intakeFollowup',(_,id)=>record('quick_intakes',id));
  allow('quickUpdate',(_,id)=>record('quick_intakes',id));
  allow('visitors markVisitor classDelivery',(_,id)=>record('classes',id));
  allow('operationsSummary');

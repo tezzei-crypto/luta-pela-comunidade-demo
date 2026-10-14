@@ -1,7 +1,7 @@
 'use strict';
 const panelItems=[
  ['dashboard-area','Visão geral',['admin','secretary']],['students-area','Alunos',['admin','secretary','guardian']],
- ['operations-area','Atividades do projeto',['admin','secretary']],['class-review-area','Conferências das aulas',['admin','secretary']],['quick-intakes-area','Pré-cadastros rápidos',['admin','secretary']],
+ ['operations-area','Atividades do projeto',['admin','secretary']],['class-review-area','Conferências das aulas',['admin','secretary']],['quick-intakes-area','Matrículas pendentes',['admin','secretary']],
  ['registrations-area','Candidatos',['admin','secretary']],['teacher-area','Professores',['admin','secretary']],['monitors-area','Monitores',['admin','secretary']],['workforce-area','Frequência da equipe',['admin','secretary']],
  ['professionals-area','Psicologia e assistência social',['admin','secretary']],['schedule-area','Agenda',['admin','secretary','guardian','psychologist','social_worker']],
  ['groups-area','Turmas e matrículas',['admin','secretary']],['attendance-area','Presença',['admin','secretary','teacher']],['rollcall-area','Chamadas pendentes',['admin','secretary','teacher']],['attendance-report-area','Relatório de presença',['admin','secretary','psychologist','social_worker']],['absence-attention-area','Avisos de faltas',['admin','secretary','teacher','psychologist','social_worker']],['reports-area','Ocorrências e lesões',['admin','secretary','teacher','psychologist','social_worker']],
