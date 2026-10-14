@@ -31,6 +31,14 @@ async function registrations(){const request=Symbol(),status=$('registration-sta
  $('registration-page').textContent='Página '+(registrationPage+1);$('registrations-previous').disabled=registrationPage===0;$('registrations-next').disabled=!p.has_more;
  $('registrations-previous').dataset.locked=String(registrationPage===0);$('registrations-next').dataset.locked=String(!p.has_more);
 }
+function setupRegistrationSearch(){
+ if(!['admin','secretary'].includes(me.role)||$('registration-protocol-search'))return;
+ const form=el('form',undefined,{id:'registration-protocol-search',class:'admin-card'});
+ const input=field(form,'Buscar inscrição pelo protocolo','protocol','',{htmlId:'registration-protocol',autocomplete:'off',maxlength:80});input.spellcheck=false;input.required=true;
+ form.append(el('p','Cole o protocolo recebido por email. A busca inclui inscrições pendentes, aprovadas, em complementação ou não aprovadas nos núcleos que você pode acessar.',{class:'muted'}),el('button','Buscar protocolo',{type:'submit'}));
+ form.addEventListener('submit',action(async()=>{const id=input.value.trim().toLowerCase(),box=$('registration-detail');box.hidden=true;box.replaceChildren();review.request=Symbol();if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id))throw Error('Cole o protocolo completo recebido por email (36 caracteres).');input.value=id;await review(id);notice('Inscrição localizada. Confira o nome, o núcleo e a situação da ficha abaixo.')}));
+ $('registrations-area').querySelector('label[for="registration-status"]').before(form);
+}
 async function review(id){const request=Symbol();review.request=request;
  const r=(await api('/registrations/'+id)).registration,box=$('registration-detail');if(review.request!==request||!box)return;box.hidden=false;box.replaceChildren(el('h3',r.student_name),el('p',`${r.age} anos · ${unitNames[r.unit]} · ${decisionNames[r.status]}`),el('p','Protocolo: '+r.id,{class:'muted'}),el('p','Responsável: '+r.guardian_name+' · '+r.relationship),phoneContact(r.guardian_email+' · '+r.guardian_phone,r.guardian_phone,r.guardian_name));
  documentChecklist(box,r.documents);if(r.source==='staff')box.append(el('p','Origem: cadastro administrativo · '+r.source_reference));
@@ -52,9 +60,9 @@ async function review(id){const request=Symbol();review.request=request;
 async function audit(){const {events}=await api('/audit');$('audit-list').replaceChildren(tableOf(['Data e hora','Autor','Ação','Aluno'],events.map(e=>[new Date(e.created_at).toLocaleString('pt-BR'),e.actor_email||e.actor,e.action,e.student_id])))}
 document.addEventListener('portal:loaded',action(async()=>{
  const staff=['admin','secretary'].includes(me.role);for(const id of ['admin-nav','dashboard-area','registrations-area'])$(id).hidden=!staff;$('audit-area').hidden=me.role!=='admin';
- if(staff){await dashboard();await registrations()}if(me.role==='admin')await audit();
+ if(staff){setupRegistrationSearch();await dashboard();await registrations()}if(me.role==='admin')await audit();
 }));
-document.addEventListener('portal:logout',()=>{for(const id of ['dashboard-cards','traffic-summary','dashboard-tables','registration-list','registration-detail','audit-list'])$(id).replaceChildren();registrationPage=0});
+document.addEventListener('portal:logout',()=>{for(const id of ['dashboard-cards','traffic-summary','dashboard-tables','registration-list','registration-detail','audit-list'])$(id).replaceChildren();registrationPage=0;$('registration-protocol-search')?.remove();review.request=Symbol()});
 $('dashboard-days').addEventListener('change',action(dashboard));$('refresh-dashboard').addEventListener('click',action(dashboard));$('refresh-audit').addEventListener('click',action(audit));
 $('registration-status').addEventListener('change',action(async()=>{registrationPage=0;await registrations()}));
 $('registrations-previous').addEventListener('click',action(async()=>{if(registrationPage>0)registrationPage--;await registrations()}));
