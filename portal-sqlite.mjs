@@ -102,7 +102,7 @@ export function createSqliteStore(env,{transport=fetch}={}){
  const api={
   ...siteEditor({db,get,all,run,tx,requireRole,scope,audit,objectPath}),
   ...diagnostics({db,get,all,run,tx,requireRole,scope,audit}),
-  ...contactSettings({db,get,run,tx,requireRole,audit}),...insights,...rollcalls,...staff,...project,...evidence,...teaching,...professionals,...scheduling,...workforceTools({db,get,all,run,tx,requireRole,scope,audit}),...studentDetails({db,get,all,run,tx,requireRole,scope,audit}),
+  ...contactSettings({db,get,run,tx,requireRole,audit}),...insights,...rollcalls,...staff,...project,...evidence,...teaching,...professionals,...scheduling,...workforceTools({db,get,all,run,tx,requireRole,scope,audit}),...studentDetails({db,get,all,run,tx,requireRole,scope,audit,onManualRegistration:(actor,p,id)=>{if(p.quick_intake_id)api.attachIntakeRegistration(actor,p.quick_intake_id,id)}}),
   ...agendaNotices,
   ...whatsappNotices({db,get,all,run,tx,requireRole,audit,env,transport,targets:()=>[...insights.absenceWhatsappTargets(),...rollcalls.rollcallWhatsappTargets()]}),
   async sendBookingNotice(actor,id){await scheduling.booking(actor,id);await agendaNotices.sendPrivateNotice(id)},
@@ -168,6 +168,7 @@ export function createSqliteStore(env,{transport=fetch}={}){
    if(!['approved','needs_info','rejected'].includes(p.decision)||typeof p.reason!=='string'||p.reason.length>500||p.decision!=='approved'&&p.reason.trim().length<5)fail('Decisão inválida.');
    let sid=null;
    if(p.decision==='approved'){
+    const intake=api.checkIntakeApproval(id);
     if(p.checked!==true)fail('Confirme a conferência documental.');const prefix={amavale:'UND1_',valparaiso:'UND2_','vale-do-carangola':'UND3_'}[r.unit];if(!prefix)fail('Núcleo inválido.');
     const normalized=s=>s.normalize('NFD').replace(/\p{Diacritic}/gu,'').toLowerCase().trim().replace(/\s+/g,' ');
     if(p.student_id||p.new_student_id)fail('O ID de aluno novo é gerado somente pelo sistema.');
@@ -182,6 +183,7 @@ export function createSqliteStore(env,{transport=fetch}={}){
     }
     project.approvedContact({...r,student_id:sid},actor);
     for(const d of r.documents)documentRow({...d,student_id:sid,created_by:actor});
+    api.finalizeIntake(actor,intake,sid);
    }
    run('UPDATE registrations SET status=?,reason=?,student_id=?,version=version+1,reviewed_by=?,reviewed_at=? WHERE id=?',p.decision,p.reason.trim(),sid,actor,nowIso(),id);audit(actor,'registration.'+p.decision+':'+id,sid);return {student_id:sid,status:p.decision};
   }),
@@ -206,7 +208,7 @@ export function createSqliteStore(env,{transport=fetch}={}){
    return limited[name](...args);
   }});
  };
- Object.assign(api,quickIntake({db,get,all,run,tx,requireRole,scope,audit,project,requireUnit:teaching.requireUnit}));
+ Object.assign(api,quickIntake({db,get,all,run,tx,requireRole,scope,audit,project,requireUnit:teaching.requireUnit,env,transport}));
  Object.assign(api,operationsTools({db,get,all,run,requireRole,scope,env,transport}));
  Object.assign(api,classReview({db,get,all,run,tx,requireRole,scope,audit,evidence,env,transport}));
  Object.assign(api,systemSync({db,get,requireRole,secret:env.PORTAL_SECRET}),backupTools({db,get,all,run,tx,requireRole,audit,env,transport}));
