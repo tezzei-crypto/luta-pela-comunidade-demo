@@ -47,7 +47,7 @@ test('Auditoria: mudança de núcleo descarta turma que ainda estava carregando 
  const a=f.run("groupDetail('A')");await tick();f.d.querySelector('select').value='valparaiso';f.d.querySelector('#group-detail').hidden=true;gate.resolve();await a;assert.equal(f.d.querySelector('#group-detail').hidden,true);assert.equal(f.d.querySelector('#group-detail [name=label]'),null);
 });
 test('Auditoria: revisão de candidato respeita o último cadastro escolhido',async t=>{
- const f=ui(t,'<section id="registration-detail"></section>'),calls=[];f.run("const unitNames={amavale:'Amavale'},decisionNames={approved:'Aprovado'};const phoneContact=text=>el('p',text);const registrationUploader=()=>{};");f.load('admin.js','review');f.w.api=url=>{const p=pause();calls.push(p);return p.promise};
+ const f=ui(t,'<section id="registration-detail"></section>'),calls=[];f.run("const unitNames={amavale:'Amavale'},decisionNames={approved:'Aprovado'};const phoneContact=text=>el('p',text);const registrationUploader=()=>{};const registrationReviewSummary=()=>{};");f.load('admin.js','review');f.w.api=url=>{const p=pause();calls.push(p);return p.promise};
  const a=f.run("review('A')"),b=f.run("review('B')"),r=name=>({registration:{id:name,student_name:'Candidato '+name,unit:'amavale',status:'approved',documents:[]}});calls[1].resolve(r('B'));await b;calls[0].resolve(r('A'));await a;assert.match(f.d.querySelector('#registration-detail').textContent,/Candidato B/);assert.doesNotMatch(f.d.querySelector('#registration-detail').textContent,/Candidato A/);
 });
 test('Auditoria: frequência da equipe não reabre aula do núcleo anterior após trocar filtro',async t=>{

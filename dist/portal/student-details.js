@@ -57,7 +57,17 @@ async function showStudentProgression(id,box){
  if(r.history.length){const h=el('details');h.append(el('summary','Histórico de graduações e correções'));const list=el('ul');for(const entry of r.history)list.append(el('li',`${dayLabel(entry.after.last_graduation_date)} — ${entry.after.belt}, ${entry.after.degrees} grau(s) · ${{initial:'Cadastro inicial',correction:'Correção administrativa',degree:'Grau confirmado',belt:'Nova faixa'}[entry.action]||entry.action}`));h.append(list);section.append(h)}
  box.append(section);
 }
-function documentChecklist(box,documents){const area=el('div',undefined,{class:'document-checklist'});for(const [k,name]of Object.entries(kinds)){if(me.role==='psychologist'&&!['photo','report_card','medical_certificate'].includes(k)||me.role==='social_worker'&&!['photo','report_card','consent'].includes(k))continue;const count=documents.filter(d=>d.kind===k).length;area.append(el('p',name+' — '+(count?`${count} arquivo(s) enviado(s)`:'Ainda não enviado'),{class:count?'received':'missing'}))}box.append(area,el('p','Arquivo enviado não significa documento conferido. Confira os anexos antes de decidir a inscrição.',{class:'muted'}))}
+function documentChecklist(box,documents,registration){
+ const area=el('div',undefined,{class:'document-checklist'});
+ for(const [k,name]of Object.entries(kinds)){
+  if(registration&&k==='consent'&&registration.readiness?.online_consent)continue;
+  if(me.role==='psychologist'&&!['photo','report_card','medical_certificate'].includes(k)||me.role==='social_worker'&&!['photo','report_card','consent'].includes(k))continue;
+  const count=documents.filter(d=>d.kind===k).length,label=(k==='consent'?'Autorização em arquivo':name)+(registration&&k==='report_card'?' (opcional nesta análise)':'');
+  const state=count?`${count} arquivo(s) enviado(s)`:k==='consent'?'Nenhum anexo; confira também a declaração eletrônica na inscrição, quando houver.':'Ainda não enviado';
+  area.append(el('p',label+' — '+state,{class:count?'received':'missing'}));
+ }
+ box.append(area,el('p','Arquivo enviado não significa documento conferido. Confira os anexos antes de decidir a inscrição.',{class:'muted'}));
+}
 function registrationUploader(box,id,r){const form=el('form');form.append(el('h4','Anexar documentos restantes do candidato'));field(form,'Categoria do anexo','kind','photo',{options:kinds});const file=field(form,'Arquivo do candidato (PDF, JPG ou PNG, até 5 MB)','file','',{type:'file'});file.accept='.pdf,.jpg,.jpeg,.png';file.required=true;form.append(el('button','Enviar documento do candidato'));form.addEventListener('submit',action(async()=>{const data=new FormData(form);data.set('version',r.version);const p=await api('/registrations/'+id+'/documents',{method:'POST',form:data});await review(id);notice(p.message)}));box.append(form)}
 function setupManualRegistration(){if($('manual-prospect'))return;const button=el('button','Cadastrar candidato recebido por email ou presencialmente',{class:'secondary'}),box=el('section',undefined,{id:'manual-prospect',hidden:''});$('registrations-area').querySelector('h2').after(button,box);button.addEventListener('click',()=>{box.hidden=!box.hidden;if(!box.hidden)box.scrollIntoView({behavior:'smooth',block:'start'})});box.append(el('h3','Novo candidato — pendente de aprovação'),el('p','Use os dados da ficha recebida e mantenha a comprovação das declarações. O cadastro fica pendente e não recebe ID de aluno até a aprovação do administrador.'));
  const form=el('form');field(form,'Nome completo do candidato','student_name','').required=true;field(form,'Nascimento do candidato','birth_date','',{type:'date'}).required=true;field(form,'Núcleo solicitado','unit','amavale',{options:scopeUnitNames()});

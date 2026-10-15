@@ -40,7 +40,7 @@ export function scopedSecretaryStore(api,actor,{scope,get,all}) {
  const pathCheck=(key,write=false)=>{
   const parts=String(key).split('/');
   if(studentUnit(parts[0]))return student(parts[0]);
-  if(parts[0]==='registrations'){record('registrations',parts[1]);return;}
+  if(['registrations','applications'].includes(parts[0])){record('registrations',parts[1]);return;}
   if(['teachers','professionals'].includes(parts[0])){staff(parts[0]==='teachers'?'teacher':'professional',parts[1]);return;}
   // Approved student documents can retain their original registration object path.
   if(!write){const d=get('SELECT student_id FROM documents WHERE object_path=?',key);if(d)return student(d.student_id)}
