@@ -5,6 +5,7 @@ import {createSqliteStore} from './portal-sqlite.mjs';import {handlePortal} from
 import {handleRegistration} from './registration-handler.mjs';import {persistRegistration} from './registration-persistence.mjs';
 import {registrationReadiness} from './registration-readiness.mjs';import {registrationNotices} from './registration-notices.mjs';
 import {completeRegistrationAttachments} from './registration-fixtures.mjs';
+import {fixtureGroup} from './school-fixtures.mjs';
 
 async function fixture(t){
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'lpc-registration-review-')),env={PORTAL_DATA_DIR:dir,PORTAL_SECRET:'fixture-only-'.repeat(4),BOOTSTRAP_ADMIN_EMAIL:'admin@example.test',PUBLIC_ORIGIN:'https://example.test',PORTAL_INTAKE_ACTIVE:'true',RESEND_API_KEY:'fake',MAIL_FROM:'test@example.test',BOOTSTRAP_STUDENTS_FILE:'',BOOTSTRAP_CONTACTS_FILE:'',BOOTSTRAP_AMAVALE_GROUPS:'false'};
@@ -65,6 +66,45 @@ test('Inscrição: vincular aluno existente conserva ID e função de equipe do 
  const saved=await f.req('/registrations/'+row.id+'/review',{as:'local',method:'POST',data:{...decision,existing_student_id:'UND1_000011'}});assert.equal(saved.status,200);assert.equal((await saved.json()).student_id,'UND1_000011');
  assert.equal((await f.store.students()).length,1);const member=(await f.store.members()).find(m=>m.email===row.guardian_email);assert.equal(member.role,'secretary');assert.deepEqual(await f.store.administrativeScope(member.user_id),['amavale']);
  assert.equal((await f.req('/me',{as:'local'})).status,200);
+});
+
+test('Secretaria local: foto e atestado, vínculo existente, repetição e histórico são preservados no fluxo HTTP',async t=>{
+ const f=await fixture(t),sid='UND1_000011',row={...f.fields(),guardian_email:'local@example.test'};
+ await f.store.import(f.admin.user_id,[{id:sid,name:row.student_name,birth_date:row.birth_date,status:'approved',height_cm:140,weight_kg:35,kimono:'M1',version:0}]);
+ const original=await f.store.student(sid),group=await fixtureGroup(f.store,f.admin.user_id,'amavale',[sid]),lesson=await f.store.createClass(f.admin.user_id,{group_id:group.id,day:new Date().toISOString().slice(0,10)});
+ await f.store.markAttendance(f.admin.user_id,lesson.id,[{id:sid,status:'present',version:0}]);const history=await f.store.attendanceHistory(f.admin.user_id,lesson.id);
+ const oldDoc=randomUUID(),key=sid+'/'+oldDoc+'.pdf';await f.store.upload(key,Buffer.from('%PDF-1.7 HISTORICO FICTICIO'));await f.store.addDocument({id:oldDoc,student_id:sid,kind:'report_card',object_path:key,original_name:'historico-ficticio.pdf',mime:'application/pdf',size:24,created_by:f.admin.user_id});
+ await persistRegistration(f.store,row,completeRegistrationAttachments().slice(0,2));
+ const decision={version:1,decision:'approved',reason:'Conferência fictícia',checked:true,existing_student_id:sid};
+ assert.equal((await f.req('/registrations/'+row.id+'/review',{as:'local',method:'POST',data:decision})).status,400);
+ const local=(await f.req('/me',{as:'local'}));const who=(await local.json()).user_id;
+ for(const kind of ['photo','medical_certificate']){
+  const r=await f.store.registration(row.id),form=new FormData();form.set('version',r.version);form.set('kind',kind);form.set('file',new Blob([kind==='photo'?new Uint8Array([255,216,255,0]):'%PDF-1.7 FICTICIO'],{type:kind==='photo'?'image/jpeg':'application/pdf'}),kind==='photo'?'foto-ficticia.jpg':'atestado-ficticio.pdf');
+  const response=await f.req('/registrations/'+row.id+'/documents',{as:'local',method:'POST',form});assert.equal(response.status,201);const did=(await response.json()).id;
+  assert.equal((await f.req('/registrations/'+row.id+'/documents/'+did,{as:'local'})).status,200);
+  assert.equal((await f.store.registration(row.id)).documents.find(d=>d.id===did).created_by,who);
+ }
+ let r=(await(await f.req('/registrations/'+row.id,{as:'local'})).json()).registration;assert.equal(r.readiness.ready,true);
+ assert.equal((await f.req('/registrations/'+row.id+'/review',{as:'local',method:'POST',data:{...decision,version:r.version,existing_student_id:''}})).status,409,'não pode criar outra ficha omitindo o vínculo');
+ assert.equal((await f.req('/registrations/'+row.id+'/review',{as:'local',method:'POST',data:{...decision,version:r.version,checked:false}})).status,400);
+ const replies=await Promise.all([0,1].map(()=>f.req('/registrations/'+row.id+'/review',{as:'local',method:'POST',data:{...decision,version:r.version}})));
+ assert.deepEqual(replies.map(r=>r.status).sort(),[200,409]);assert.equal((await replies.find(r=>r.status===200).json()).student_id,sid);
+ assert.equal((await f.store.students()).length,1);assert.deepEqual(await f.store.student(sid),original);assert.deepEqual(await f.store.attendanceHistory(f.admin.user_id,lesson.id),history);
+ const docs=await f.store.documents(sid);assert.equal(docs.length,5);assert.ok(docs.some(d=>d.id===oldDoc));for(const doc of docs)assert.equal((await f.req('/documents/'+doc.id+'/download',{as:'local'})).status,200);
+ const events=(await f.store.auditLog()).filter(e=>e.action==='registration.approved:'+row.id);assert.equal(events.length,1);assert.equal(events[0].actor,who);
+ const me=(await(await f.req('/me',{as:'local'})).json());assert.equal(me.role,'secretary');assert.deepEqual(me.units,['amavale']);assert.equal((await f.store.registration(row.id)).student_id,sid);
+});
+
+test('Secretaria local: upload rejeita formato, tamanho, versão antiga e outro núcleo sem guardar anexo indevido',async t=>{
+ const f=await fixture(t),id=await f.create(completeRegistrationAttachments().slice(0,2));
+ const form=({kind='photo',bytes=Buffer.from([255,216,255,0]),type='image/jpeg',version=1}={})=>{const data=new FormData();data.set('kind',kind);data.set('version',version);data.set('file',new Blob([bytes],{type}),'arquivo-ficticio');return data;};
+ const count=()=>fs.readdirSync(path.join(f.dir,'objects'),{recursive:true}).filter(p=>fs.statSync(path.join(f.dir,'objects',p)).isFile()).length;
+ const before=count();
+ for(const [as,data,code]of [
+  ['other',form(),403],['',form(),401],['local',form({bytes:Buffer.from('%PDF-1.7 FICTICIO'),type:'application/pdf'}),400],
+  ['local',form({bytes:Buffer.alloc(5*1024*1024+1)}),400],['local',form({bytes:Buffer.from('formato falso')}),400],['local',form({version:999}),409]
+ ]){const response=await f.req('/registrations/'+id+'/documents',{as,method:'POST',form:data});assert.equal(response.status,code);assert.equal(count(),before);assert.equal((await f.store.registration(id)).documents.length,2);}
+ const replies=await Promise.all([0,1].map(()=>f.req('/registrations/'+id+'/documents',{as:'local',method:'POST',form:form()})));assert.deepEqual(replies.map(r=>r.status).sort(),[201,409]);assert.equal(count(),before+1);assert.equal((await f.store.registration(id)).documents.length,3);
 });
 
 test('Aviso de inscrição: fila sobrevive conexão nova, repete mesmo conteúdo e chave após falha, não duplica após aceitação',async t=>{

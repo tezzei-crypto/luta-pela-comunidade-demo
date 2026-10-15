@@ -83,11 +83,11 @@ function registrationReviewSummary(box,r){
  if(r.notification)box.append(el('p',status[r.notification.state]||'Consulte a administração sobre o aviso por email.',{class:['failed','needs_attention'].includes(r.notification.state)?'form-error':'muted'}));
 }
 async function review(id){const request=Symbol(),box=$('registration-detail');review.request=request;
- if(!box)return false;box.hidden=false;box.replaceChildren(el('p','Carregando inscrição…',{role:'status'}));
+ if(!box)return false;box.hidden=false;box.dataset.registrationId=id;box.replaceChildren(el('p','Carregando inscrição…',{role:'status'}));
  if(typeof showPanel==='function')showPanel('registrations-area',{focus:false});
  let r;try{r=(await api('/registrations/'+id)).registration;}catch(error){if(review.request!==request)return false;box.replaceChildren();box.hidden=true;throw error;}
  if(review.request!==request||!box.isConnected)return false;
- if($('registration-protocol'))$('registration-protocol').value=r.id;
+ box.dataset.registrationId=r.id;if($('registration-protocol'))$('registration-protocol').value=r.id;
  box.replaceChildren(el('h3',r.student_name),el('p',`${r.age} anos · ${unitNames[r.unit]} · ${decisionNames[r.status]}`),el('p','Protocolo: '+r.id,{class:'muted'}),el('p','Responsável: '+r.guardian_name+' · '+r.relationship),phoneContact(r.guardian_email+' · '+r.guardian_phone,r.guardian_phone,r.guardian_name));
  registrationReviewSummary(box,r);documentChecklist(box,r.documents,r);if(r.source==='staff')box.append(el('p','Origem: cadastro administrativo · '+r.source_reference));
  if(r.reason)box.append(el('p','Última decisão: '+r.reason));if(r.student_id){box.append(el('p','ID vinculado: '+r.student_id));const open=el('button','Abrir ficha do aluno aprovado');open.addEventListener('click',action(()=>detail(r.student_id)));box.append(open)}
