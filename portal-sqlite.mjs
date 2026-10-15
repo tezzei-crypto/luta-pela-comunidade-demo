@@ -1,6 +1,7 @@
 import {backupTools} from './backup-tools.mjs';
 import {registrationReadiness} from './registration-readiness.mjs';
 import {registrationNotices} from './registration-notices.mjs';
+import {registrationDocumentNotices} from './registration-document-notices.mjs';
 import {quickIntake} from './quick-intake.mjs';
 import {classReview} from './class-review.mjs';
 import {operationsTools} from './operations-tools.mjs';
@@ -214,6 +215,7 @@ export function createSqliteStore(env,{transport=fetch}={}){
   }});
  };
  Object.assign(api,quickIntake({db,get,all,run,tx,requireRole,scope,audit,project,requireUnit:teaching.requireUnit,env,transport}));
+ Object.assign(api,registrationDocumentNotices({db,get,all,run,tx,requireRole,scope,env,transport}));
  Object.assign(api,operationsTools({db,get,all,run,requireRole,scope,env,transport}));
  Object.assign(api,classReview({db,get,all,run,tx,requireRole,scope,audit,evidence,env,transport}));
  Object.assign(api,systemSync({db,get,requireRole,secret:env.PORTAL_SECRET}),backupTools({db,get,all,run,tx,requireRole,audit,env,transport}));

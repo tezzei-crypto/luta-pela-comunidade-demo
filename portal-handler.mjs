@@ -85,6 +85,7 @@ export async function handlePortal(req,env=process.env,injectedStore){
    return json({...result,metrics_enabled:role==='admin'&&!!metricsEnabled(env),intake_enabled:env.PORTAL_INTAKE_ACTIVE==='true',registry_active:usesPortalRegistry(env)});
   }
   if(route==='/audit'&&method==='GET'){requireRole('admin','secretary');return json({events:await store.auditLog()})}
+  if(route==='/registration-document-notices'&&method==='GET'){requireRole('admin','secretary');return json(await store.registrationDocumentNotificationStatus(actor))}
   if(route==='/registrations'&&method==='GET'){
    requireRole('admin','secretary');const status=url.searchParams.get('status')||'pending',page=Number(url.searchParams.get('page')||0);
    if(!['pending','needs_info','approved','rejected'].includes(status)||!Number.isInteger(page)||page<0||page>10000)fail('Filtro inválido.');

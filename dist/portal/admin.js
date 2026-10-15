@@ -31,6 +31,27 @@ async function registrations(){const request=Symbol(),status=$('registration-sta
  $('registration-page').textContent='Página '+(registrationPage+1);$('registrations-previous').disabled=registrationPage===0;$('registrations-next').disabled=!p.has_more;
  $('registrations-previous').dataset.locked=String(registrationPage===0);$('registrations-next').dataset.locked=String(!p.has_more);
 }
+async function registrationDocumentNoticeStatus(){
+ if(!me||!['admin','secretary'].includes(me.role))return;
+ let box=$('registration-document-notices');
+ if(!box){box=el('details',undefined,{id:'registration-document-notices',class:'admin-card'});$('registration-protocol-search').after(box)}
+ const request=Symbol();registrationDocumentNoticeStatus.request=request;
+ box.replaceChildren(el('summary','Avisos automáticos de documentos'),el('p','Conferindo os avisos…',{role:'status'}));
+ try{
+  const data=await api('/registration-document-notices');if(registrationDocumentNoticeStatus.request!==request||!box.isConnected)return;
+  box.replaceChildren(el('summary','Avisos automáticos de documentos'));
+  box.append(el('p',data.configured?'Resumo diário a partir das 8h de Brasília. O sistema verifica a cada 5 minutos e envia uma vez por dia para cada secretaria com documentos pendentes.':'Envio automático indisponível. A administração precisa conferir o serviço de email.',{class:data.configured?'muted':'form-error'}),el('p','Remetente: '+data.sender));
+  const states={pending:'Aguardando envio ou nova tentativa',sending:'Envio em processamento',accepted:'Aceito pelo serviço de email',failed:'Falha no envio — administração deve verificar',needs_attention:'Envio não confirmado — administração deve conferir antes de reenviar',cancelled:'Aviso cancelado porque os dados, o acesso ou a data mudaram'};
+  for(const r of data.recipients){const card=el('div',undefined,{class:'document-notice-recipient'});card.append(el('strong',r.email),el('p',r.units.map(u=>unitNames[u]||u).join(', ')+' · '+r.pending_count+' inscrição(ões) com documentos pendentes.'));
+   if(r.latest){card.append(el('p',(states[r.latest.state]||'Verificar envio')+' · resumo de '+r.latest.day.split('-').reverse().join('/'),{class:['failed','needs_attention'].includes(r.latest.state)?'form-error':'muted'}));if(r.latest.accepted_at)card.append(el('p','Aceito em '+new Date(r.latest.accepted_at).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'})+'. Aceitação não confirma entrega ou leitura.'));}
+   else card.append(el('p','Ainda não há envio registrado para esta secretaria.'));
+   box.append(card);
+  }
+  if(!data.recipients.length)box.append(el('p','Nenhuma secretaria ativa com núcleo autorizado foi encontrada. Confira Equipe e acessos.'));
+  box.append(el('p','Inscrições completas, aprovadas ou não aprovadas deixam de entrar nos próximos resumos. Os avisos vão para a equipe; o contato com as famílias continua sendo feito pela secretaria.',{class:'muted'}));
+ }catch{if(registrationDocumentNoticeStatus.request!==request||!box.isConnected)return;box.replaceChildren(el('summary','Avisos automáticos de documentos'),el('p','Não foi possível consultar os avisos. Tente atualizar.',{role:'alert',class:'form-error'}));}
+ const refresh=el('button','Atualizar situação dos avisos',{type:'button',class:'secondary'});refresh.addEventListener('click',action(registrationDocumentNoticeStatus));box.append(refresh);
+}
 function setupRegistrationSearch(){
  if(!['admin','secretary'].includes(me.role)||$('registration-protocol-search'))return;
  const form=el('form',undefined,{id:'registration-protocol-search',class:'admin-card'});
@@ -89,9 +110,9 @@ async function review(id){const request=Symbol(),box=$('registration-detail');re
 async function audit(){const {events}=await api('/audit');$('audit-list').replaceChildren(tableOf(['Data e hora','Autor','Ação','Aluno'],events.map(e=>[new Date(e.created_at).toLocaleString('pt-BR'),e.actor_email||e.actor,e.action,e.student_id])))}
 document.addEventListener('portal:loaded',action(async()=>{
  const staff=['admin','secretary'].includes(me.role);for(const id of ['admin-nav','dashboard-area','registrations-area'])$(id).hidden=!staff;$('audit-area').hidden=me.role!=='admin';
- if(staff){setupRegistrationSearch();await dashboard();await registrations()}if(me.role==='admin')await audit();
+ if(staff){setupRegistrationSearch();await dashboard();await registrations();await registrationDocumentNoticeStatus()}if(me.role==='admin')await audit();
 }));
-document.addEventListener('portal:logout',()=>{for(const id of ['dashboard-cards','traffic-summary','dashboard-tables','registration-list','registration-detail','audit-list'])$(id).replaceChildren();registrationPage=0;$('registration-protocol-search')?.remove();review.request=Symbol()});
+document.addEventListener('portal:logout',()=>{for(const id of ['dashboard-cards','traffic-summary','dashboard-tables','registration-list','registration-detail','audit-list'])$(id).replaceChildren();registrationPage=0;$('registration-protocol-search')?.remove();$('registration-document-notices')?.remove();registrationDocumentNoticeStatus.request=Symbol();review.request=Symbol()});
 $('dashboard-days').addEventListener('change',action(dashboard));$('refresh-dashboard').addEventListener('click',action(dashboard));$('refresh-audit').addEventListener('click',action(audit));
 $('registration-status').addEventListener('change',action(async()=>{registrationPage=0;await registrations()}));
 $('registrations-previous').addEventListener('click',action(async()=>{if(registrationPage>0)registrationPage--;await registrations()}));
