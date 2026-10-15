@@ -29,7 +29,7 @@ let intakeJobRunning=false;
 async function intakeJob(){if(intakeJobRunning||!portalConfigured(process.env))return;intakeJobRunning=true;try{await createStore(process.env).deliverIntakeNotices()}catch{console.error('Aviso de matrícula da secretaria pendente; nova tentativa em cinco minutos.')}finally{intakeJobRunning=false}}
 setInterval(intakeJob,300000).unref();setTimeout(intakeJob,45000).unref();
 let registrationJobRunning=false;
-async function registrationJob(){if(registrationJobRunning||!portalConfigured(process.env))return;registrationJobRunning=true;try{await createStore(process.env).deliverRegistrationNotices()}catch{console.error('Aviso de inscrição pendente; confira o painel e a próxima tentativa.')}finally{registrationJobRunning=false}}
+async function registrationJob(){if(registrationJobRunning||!portalConfigured(process.env))return;registrationJobRunning=true;try{const store=createStore(process.env);await store.deliverRegistrationNotices();await store.deliverRegistrationDocumentNotices()}catch{console.error('Aviso de inscrição pendente; confira o painel e a próxima tentativa.')}finally{registrationJobRunning=false}}
 setInterval(registrationJob,300000).unref();setTimeout(registrationJob,45000).unref();
 let recoveryJobRunning=false;
 async function recoveryJob(){if(recoveryJobRunning||!portalConfigured(process.env))return;recoveryJobRunning=true;try{const store=createStore(process.env);try{await store.backupTick()}catch{console.error('Backup não concluído. Confira o painel Backup e recuperação.')}await store.deliverBackupNotices()}catch{console.error('Não foi possível conferir os avisos de backup. Consulte o painel.')}finally{recoveryJobRunning=false}}

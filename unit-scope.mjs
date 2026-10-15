@@ -67,6 +67,7 @@ export function scopedSecretaryStore(api,actor,{scope,get,all}) {
  rules.contactExport=async()=> (await api.contactExport(actor)).filter(r=>scope.permits(actor,studentUnit(r.id)));
  rules.registrations=async(status,offset=0)=>all(`SELECT id,student_name,birth_date,unit,status,student_id,version,created_at FROM registrations WHERE status=?${scope.sql(actor,'unit')} ORDER BY created_at,id LIMIT 51 OFFSET ?`,status,offset);
  allow('registration',id=>record('registrations',id));
+ allow('registrationDocumentNotificationStatus');
  allow('manualRegistration',(_,p)=>unit(p.unit));
  allow('reviewRegistration registrationUpload',(_,id,p)=>{record('registrations',id);if(p?.existing_student_id)student(p.existing_student_id)});
  allow('groups classes unitRoster reports reportsExport attendanceExport workforceRoster workforceSessions workforceExport',(_,u)=>unit(u));

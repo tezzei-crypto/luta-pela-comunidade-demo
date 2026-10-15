@@ -67,3 +67,5 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}input,select,textarea{f
 @media(max-width:760px){.review-filters{grid-template-columns:1fr}.review-step{padding:12px}.review-step button{width:100%;white-space:normal;margin:6px 0}#class-review-area{padding:12px}#class-review-area input,#class-review-area select,#class-review-area textarea{font-size:16px;max-width:100%}.review-task-button{overflow-wrap:anywhere}}
 
 .enrollment-shortcut{display:flex;gap:10px;align-items:center;justify-content:center}.enrollment-shortcut svg{flex-shrink:0}
+
+#registration-document-notices{border:1px solid #cbd6df;border-radius:8px;padding:12px;margin:16px 0;overflow-wrap:anywhere}#registration-document-notices summary{min-height:48px;padding:12px 0;font-weight:700;cursor:pointer}.document-notice-recipient{padding:14px;border:1px solid #cbd6df;border-radius:8px;background:#f0f5f9;color:#142d42;margin:12px 0;min-width:0;overflow-wrap:anywhere}.document-notice-recipient strong{display:block;font-size:1rem}.document-notice-recipient p{margin:8px 0}

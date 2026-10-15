@@ -197,6 +197,8 @@ test('Concorrência real: oito trabalhadores disputam uma vaga e somente um conf
  const {Worker}=await import('node:worker_threads'),f=await fixture(t),s=await f.slot(),barrier=new SharedArrayBuffer(4),flag=new Int32Array(barrier);
  const workers=Array.from({length:8},()=>new Worker(`const {parentPort,workerData}=require('node:worker_threads');(async()=>{const {createSqliteStore}=await import(workerData.module);const store=createSqliteStore(workerData.env);parentPort.postMessage({ready:true});Atomics.wait(new Int32Array(workerData.barrier),0,0);try{await store.createAppointmentRequest(workerData.payload);parentPort.postMessage({status:200})}catch(error){parentPort.postMessage({status:error.status||500})}finally{store.close()}})().catch(e=>{throw e})`,{eval:true,workerData:{module:new URL('./portal-sqlite.mjs',import.meta.url).href,env:f.env,payload:f.payload(s),barrier}}));
  t.after(()=>Promise.all(workers.map(w=>w.terminate())));
- let ready=0;const outcomes=workers.map(w=>new Promise((resolve,reject)=>{w.on('error',reject);w.on('message',m=>{if(m.ready){if(++ready===workers.length){Atomics.store(flag,0,1);Atomics.notify(flag,0)}}else resolve(m.status)})}));
+ // A result message can arrive before the worker closes SQLite. Wait for exit
+ // before the fixture removes its database, especially on Windows.
+ let ready=0;const outcomes=workers.map(w=>new Promise((resolve,reject)=>{let status;w.on('error',reject);w.on('exit',code=>code===0&&status!==undefined?resolve(status):reject(Error('Worker did not finish cleanly')));w.on('message',m=>{if(m.ready){if(++ready===workers.length){Atomics.store(flag,0,1);Atomics.notify(flag,0)}}else status=m.status})}));
  const results=await Promise.all(outcomes);assert.equal(results.filter(s=>s===200).length,1);assert.equal(results.filter(s=>s===409).length,7);assert.equal((await f.store.bookings(f.admin.user_id)).length,1);assert.equal((await f.calendar()).events[0].status,'pending');
 });
