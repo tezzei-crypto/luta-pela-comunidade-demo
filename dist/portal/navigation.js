@@ -26,10 +26,10 @@ function setupNavigation(){
  for(const [id]of panelItems)$(id)?.classList.add('workspace-panel');
  $('workspace-menu').replaceChildren();for(const [id,label,roles]of panelItems)if(roles.includes(me.role)){const a=el('a',label,{href:'#'+id});a.addEventListener('click',e=>{e.preventDefault();showPanel(id)});$('workspace-menu').append(a)}
  if(!$('quick-actions')&&['admin','secretary'].includes(me.role)){const quick=el('div',undefined,{id:'quick-actions',class:'quick-actions'});$('dashboard-area').prepend(quick);for(const [id,label,roles]of panelItems.filter(p=>['operations-area','quick-intakes-area','attendance-area','teacher-area','professionals-area','registrations-area','groups-area','rollcall-area','attendance-report-area','workforce-area'].includes(p[0])&&p[2].includes(me.role))){const b=el('button',label,{class:'secondary',type:'button'});b.addEventListener('click',()=>showPanel(id));quick.append(b)}}
- let target=currentPanel||location.hash.slice(1);if(!panelItems.some(p=>p[0]===target&&p[2].includes(me.role)))target=me.role==='teacher'?'attendance-area':['psychologist','social_worker'].includes(me.role)?'schedule-area':['admin','secretary'].includes(me.role)?'dashboard-area':'students-area';showPanel(target,{focus:false});
+ let target=currentPanel||location.hash.slice(1).split('?')[0];if(!panelItems.some(p=>p[0]===target&&p[2].includes(me.role)))target=me.role==='teacher'?'attendance-area':['psychologist','social_worker'].includes(me.role)?'schedule-area':['admin','secretary'].includes(me.role)?'dashboard-area':'students-area';showPanel(target,{focus:false});
 }
 document.addEventListener('portal:loaded',setupNavigation);
 document.addEventListener('portal:logout',()=>{currentPanel='';$('workspace-menu')?.replaceChildren();$('quick-actions')?.remove()});
-window.addEventListener('hashchange',()=>{if(me)showPanel(location.hash.slice(1),{history:false})});
+window.addEventListener('hashchange',()=>{if(me)showPanel(location.hash.slice(1).split('?')[0],{history:false})});
 new MutationObserver(changes=>{if(!me)return;let added=false;for(const c of changes)for(const node of c.addedNodes)if(node.nodeType===1&&panelItems.some(p=>p[0]===node.id)){node.classList.add('workspace-panel');added=true}if(added)showPanel(currentPanel,{focus:false,history:false});$('teaching-nav')?.classList.add('legacy-nav')}).observe($('workspace'),{childList:true});
 document.addEventListener('invalid',e=>{for(let p=e.target.parentElement;p;p=p.parentElement)if(p.tagName==='DETAILS')p.open=true},true);

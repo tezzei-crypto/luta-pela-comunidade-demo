@@ -1,3 +1,4 @@
+import {completeRegistrationAttachments,completeRegistrationDocuments} from './registration-fixtures.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -18,7 +19,7 @@ async function fixture(t){
  const admin=(await store.members())[0];return {root,env,store,admin,mail};
 }
 const registration=()=>({id:randomUUID(),student_name:'Novo Aluno Fictício',birth_date:'2015-02-10',unit:'amavale',guardian_name:'Responsável Fictício',guardian_email:'guardian@example.test',guardian_phone:'24999999999',relationship:'Mãe'});
-const attachments=()=>[{filename:'photo.jpg',content:Buffer.from([255,216,255,0]).toString('base64')},{filename:'studentDocument.pdf',content:Buffer.from('%PDF-1.7 teste').toString('base64')}];
+const attachments=completeRegistrationAttachments;
 test('IDs automáticos: sequências independentes por núcleo, concorrência e proibição de ID manual',async t=>{
  const {store,admin}=await fixture(t);await store.import(admin.user_id,[pupil]);
  const entries=[{...registration(),student_name:'Pessoa A Fictícia'},{...registration(),student_name:'Pessoa B Fictícia'},{...registration(),student_name:'Pessoa C Fictícia',unit:'valparaiso'},{...registration(),student_name:'Pessoa D Fictícia',unit:'vale-do-carangola'}];
@@ -57,7 +58,7 @@ test('SQLite: aprovação exige conferência, mantém sequência e não duplica 
  const {store,admin}=await fixture(t);await store.import(admin.user_id,[pupil]);const r=registration();
  await persistRegistration(store,r,attachments());await persistRegistration(store,r,attachments());assert.equal((await store.registrations('pending')).length,1);
  await assert.rejects(store.reviewRegistration(admin.user_id,r.id,{version:1,decision:'approved',reason:'',checked:false}));
- const result=await store.reviewRegistration(admin.user_id,r.id,{version:1,decision:'approved',reason:'Documentos conferidos',checked:true});assert.equal(result.student_id,'UND1_000080');assert.equal((await store.documents(result.student_id)).length,2);
+ const result=await store.reviewRegistration(admin.user_id,r.id,{version:1,decision:'approved',reason:'Documentos conferidos',checked:true});assert.equal(result.student_id,'UND1_000080');assert.equal((await store.documents(result.student_id)).length,4);
  await assert.rejects(store.reviewRegistration(admin.user_id,r.id,{version:1,decision:'approved',reason:'',checked:true}),e=>e.status===409);
  assert.equal((await store.students()).length,2);assert.equal((await store.auditLog()).filter(a=>a.action.startsWith('registration.approved')).length,1);
 });
@@ -65,7 +66,7 @@ test('SQLite: duplicata exige vínculo explícito e lote com documento inválido
  const {store,admin}=await fixture(t),r=registration();await store.import(admin.user_id,[{...pupil,name:r.student_name,birth_date:r.birth_date}]);await persistRegistration(store,r,attachments());
  await assert.rejects(store.reviewRegistration(admin.user_id,r.id,{version:1,decision:'approved',reason:'',checked:true}),e=>e.status===409);
  assert.equal((await store.reviewRegistration(admin.user_id,r.id,{version:1,decision:'approved',reason:'Mesmo aluno conferido',checked:true,existing_student_id:pupil.id})).student_id,pupil.id);
- const bad={...registration(),student_name:'Outra Pessoa Fictícia',payload_hash:'test',consent_version:'test',documents:[{id:randomUUID(),object_path:'duplicate',kind:'photo',original_name:'a',mime:'image/jpeg',size:1},{id:randomUUID(),object_path:'duplicate',kind:'photo',original_name:'b',mime:'image/jpeg',size:1}]};
+ const bad={...registration(),student_name:'Outra Pessoa Fictícia',payload_hash:'test',consent_version:'2026-10-07-portal',documents:[...completeRegistrationDocuments(),{id:randomUUID(),object_path:'duplicate',kind:'photo',original_name:'a',mime:'image/jpeg',size:1},{id:randomUUID(),object_path:'duplicate',kind:'photo',original_name:'b',mime:'image/jpeg',size:1}]};
  await store.receiveRegistration(bad);await assert.rejects(store.reviewRegistration(admin.user_id,bad.id,{version:1,decision:'approved',reason:'',checked:true}));
  assert.equal((await store.students()).length,1);assert.equal((await store.registration(bad.id)).status,'pending');
 });

@@ -1,4 +1,6 @@
 import {backupTools} from './backup-tools.mjs';
+import {registrationReadiness} from './registration-readiness.mjs';
+import {registrationNotices} from './registration-notices.mjs';
 import {quickIntake} from './quick-intake.mjs';
 import {classReview} from './class-review.mjs';
 import {operationsTools} from './operations-tools.mjs';
@@ -66,7 +68,8 @@ export function createSqliteStore(env,{transport=fetch}={}){
  const requireRole=(actor,roles)=>{const m=member(actor);if(!m||!roles.includes(m.role))fail('Acesso não permitido.',403);return m};
  const audit=(actor,action,id=null)=>run('INSERT INTO audit(actor,action,student_id,created_at) VALUES(?,?,?,?)',actor,action,id,nowIso());
  const documentRow=r=>{run('INSERT INTO documents(id,student_id,kind,object_path,original_name,mime,size,created_by,created_at) VALUES(?,?,?,?,?,?,?,?,?)',r.id,r.student_id,r.kind,r.object_path,r.original_name,r.mime,r.size,r.created_by,nowIso())};
- const asRegistration=r=>r?{...r,documents:JSON.parse(r.documents)}:undefined;
+ const registrationMail=registrationNotices({db,get,all,run,tx,env,transport});
+ const asRegistration=r=>r?{...r,documents:JSON.parse(r.documents),notification:registrationMail.status(r.id)}:undefined;
  function objectPath(key){if(typeof key!=='string'||!key||key.split('/').some(p=>!p||p==='.'||p==='..'||!/^[a-zA-Z0-9_.-]+$/.test(p)))fail('Arquivo inválido.');const full=path.resolve(objects,...key.split('/'));if(!full.startsWith(objects+path.sep))fail('Arquivo inválido.');return full}
  const scope=unitScope({db,get,all,requireRole});
  const teaching=teacherTools({db,get,all,run,tx,requireRole,scope,audit});
@@ -160,7 +163,7 @@ export function createSqliteStore(env,{transport=fetch}={}){
   receiveRegistration:async row=>tx(()=>{
    const old=asRegistration(get('SELECT * FROM registrations WHERE id=?',row.id));if(old){if(old.payload_hash!==row.payload_hash)fail('Protocolo já utilizado.',409);return old}
    const columns=['id','payload_hash','student_name','birth_date','unit','guardian_name','guardian_email','guardian_phone','relationship','consent_version','documents','created_at'];
-   const r={...row,documents:JSON.stringify(row.documents),created_at:nowIso()};run('INSERT INTO registrations('+columns.join(',')+') VALUES('+columns.map(()=>'?').join(',')+')',...columns.map(k=>r[k]));return row;
+   const r={...row,documents:JSON.stringify(row.documents),created_at:nowIso()};run('INSERT INTO registrations('+columns.join(',')+') VALUES('+columns.map(()=>'?').join(',')+')',...columns.map(k=>r[k]));registrationMail.enqueue(row.id);return row;
   }),
   reviewRegistration:async(actor,id,p)=>tx(()=>{
    const reviewer=requireRole(actor,['admin','secretary']);const r=asRegistration(get('SELECT * FROM registrations WHERE id=?',id));
@@ -168,6 +171,7 @@ export function createSqliteStore(env,{transport=fetch}={}){
    if(!['approved','needs_info','rejected'].includes(p.decision)||typeof p.reason!=='string'||p.reason.length>500||p.decision!=='approved'&&p.reason.trim().length<5)fail('Decisão inválida.');
    let sid=null;
    if(p.decision==='approved'){
+    const readiness=registrationReadiness(r);if(!readiness.ready)fail('Antes de aprovar, complete: '+readiness.missing.join(', ')+'.');
     const intake=api.checkIntakeApproval(id);
     if(p.checked!==true)fail('Confirme a conferência documental.');const prefix={amavale:'UND1_',valparaiso:'UND2_','vale-do-carangola':'UND3_'}[r.unit];if(!prefix)fail('Núcleo inválido.');
     const normalized=s=>s.normalize('NFD').replace(/\p{Diacritic}/gu,'').toLowerCase().trim().replace(/\s+/g,' ');
@@ -200,6 +204,7 @@ export function createSqliteStore(env,{transport=fetch}={}){
   },
   async backup(){const dir=path.join(root,'backups');fs.mkdirSync(dir,{recursive:true,mode:0o700});const file=path.join(dir,'portal-'+nowIso().replace(/[:.]/g,'-')+'.sqlite');await backup(db,file);return file}
  };
+ api.deliverRegistrationNotices=registrationMail.deliver;
  api.administrativeScope=async actor=>scope.units(actor);
  api.forActor=actor=>{
   const initialRole=member(actor)?.role,limited=initialRole==='secretary'?scopedSecretaryStore(api,actor,{scope,get,all}):api;

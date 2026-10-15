@@ -1,4 +1,5 @@
 import {handleBackups} from './backup-handler.mjs';
+import {registrationReadiness} from './registration-readiness.mjs';
 import {handleQuickIntake} from './quick-intake-handler.mjs';
 import {handleClassEvidence} from './class-evidence-handler.mjs';
 import {sameOrigin} from './request-origin.mjs';
@@ -91,11 +92,11 @@ export async function handlePortal(req,env=process.env,injectedStore){
   }
   const registrationMatch=route.match(/^\/registrations\/([0-9a-f-]+)(?:\/(review|documents\/([0-9a-f-]+)))?$/i);
   if(registrationMatch){
-   requireRole('admin','secretary');const id=registrationMatch[1];if(!uuid(id))fail('Protocolo inválido.');
+   requireRole('admin','secretary');const id=registrationMatch[1].toLowerCase();if(!uuid(id))fail('Protocolo inválido.');
    const registration=await store.registration(id);if(!registration)fail('Inscrição não localizada.',404);
    if(!registrationMatch[2]&&method==='GET'){
     const {payload_hash,documents,...data}=registration;await store.audit(actor,'registration.read:'+id);
-    return json({registration:{...data,age:ageAt(data.birth_date),documents:documents.map(({object_path,...d})=>d)}});
+    return json({registration:{...data,age:ageAt(data.birth_date),readiness:registrationReadiness(registration),documents:documents.map(({object_path,...d})=>d)}});
    }
    if(registrationMatch[2]==='review'&&method==='POST'){
     const p=await body();

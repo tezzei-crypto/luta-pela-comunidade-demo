@@ -2,7 +2,8 @@ import {recordDiagnostic} from './diagnostic-http.mjs';
 import {causeFor} from './diagnostics.mjs';
 import {createStore} from './portal-store.mjs';
 import {persistRegistration} from './registration-persistence.mjs';
-export const RECIPIENTS=['participante@lutapelacomunidade.com.br','tezzei@gmail.com'];
+import {REGISTRATION_RECIPIENTS} from './registration-notices.mjs';
+export const RECIPIENTS=REGISTRATION_RECIPIENTS;
 const UNITS={amavale:'Amavale',valparaiso:'Valparaíso','vale-do-carangola':'Vale do Carangola'};
 const FILES={studentDocument:'Documento do aluno',guardianDocument:'Documento do responsável',medicalCertificate:'Atestado médico',photo:'Foto de registro'};
 export function ageAt(birthDate,now=new Date()){
@@ -31,7 +32,7 @@ export async function handleRegistration(request,env={},send=fetch,injectedStore
  if(!unit)return reply(400,'Selecione um núcleo válido.');
  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||email.length>254||!/^\+?[\d ()-]{10,25}$/.test(phone)||!['Mãe','Pai','Responsável legal'].includes(relationship))return reply(400,'Confira o contato e o vínculo do responsável.');
  if(['participationConsent','medicalConsent','dataConsent'].some(k=>get(k)!=='on'))return reply(400,'As três declarações do responsável são obrigatórias.');
- const id=get('requestId');if(!/^[0-9a-f-]{36}$/i.test(id))return reply(400,'Atualize a página antes de enviar.');
+ const id=get('requestId').toLowerCase();if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id))return reply(400,'Atualize a página antes de enviar.');
  const attachments=[];let total=0;
  for(const [key,label] of Object.entries(FILES)){
   const file=data.get(key);
@@ -46,9 +47,10 @@ export async function handleRegistration(request,env={},send=fetch,injectedStore
  }
  if(env.PORTAL_INTAKE_ACTIVE==='true'){
   try{
-   await persistRegistration(injectedStore||createStore(env),{id,student_name:student,birth_date:birth,unit:get('unit'),guardian_name:guardian,guardian_email:email,guardian_phone:phone,relationship},attachments);
+   const store=injectedStore||createStore(env);
+   await persistRegistration(store,{id,student_name:student,birth_date:birth,unit:get('unit'),guardian_name:guardian,guardian_email:email,guardian_phone:phone,relationship},attachments);
    // O registro privado é a confirmação principal; email é somente um aviso, sem anexos.
-   if(env.RESEND_API_KEY&&env.MAIL_FROM)await send('https://api.resend.com/emails',{method:'POST',headers:{Authorization:`Bearer ${env.RESEND_API_KEY}`,'Content-Type':'application/json','Idempotency-Key':`registration-private-${id}`},body:JSON.stringify({from:env.MAIL_FROM,to:RECIPIENTS,subject:'Nova inscrição para análise — Luta pela Comunidade',text:`Uma nova inscrição foi recebida no painel administrativo. Protocolo: ${id}. Entre na área de administração do site para conferir os documentos e decidir sobre a aprovação.`}),signal:AbortSignal.timeout(15000)}).then(response=>{if(!response.ok)throw Error('Email not accepted');}).catch(()=>{recordDiagnostic(env,{support_id:request.headers.get('x-support-id'),operation:'registration',kind:'email',status:502},injectedStore)});
+   if(env.RESEND_API_KEY&&env.MAIL_FROM)try{const delivery=await store.deliverRegistrationNotices({id,send});if(delivery.failed)throw Error('Aviso pendente');}catch{recordDiagnostic(env,{support_id:request.headers.get('x-support-id'),operation:'registration',kind:'email',status:502},store)}
    return reply(200,'Solicitação registrada! A secretaria poderá receber pelo WhatsApp os documentos que faltarem e completar seu cadastro. Aguarde o contato da equipe e a confirmação da vaga.',{protocol:id});
   }catch(error){recordDiagnostic(env,{support_id:request.headers.get('x-support-id'),operation:'registration',kind:error.status===409?'conflict':causeFor(error),status:error.status===409?409:503},injectedStore);return reply(error.status===409?409:503,error.status===409?error.message:'Não foi possível confirmar o registro. Seus campos foram preservados; tente novamente.')}
  }
