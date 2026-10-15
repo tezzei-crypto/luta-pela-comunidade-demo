@@ -73,11 +73,13 @@ api('/status').then(async p=>{if(p.enabled){
  $('login').hidden=false;notice('Entre com o email previamente habilitado. A sessão dura até 6 horas nesta aba. Use Sair ao terminar.');
  }else notice('O portal privado está em preparação. Você pode continuar solicitando atendimento pelo link acima.')}).catch(e=>{if(!me)$('login').hidden=false;notice(e.message,true)});
 
-import('/portal/system-sync.js').then(({startSystemSync})=>startSystemSync({api,el,active:()=>!!me&&!!token,hasDraft:()=>!!document.querySelector('#review-detail:not([hidden]) form')||!!document.querySelector('#quick-intakes-area .intake-task[open]')||!!document.querySelector('.quick-intake .quick-entry[open]')||typeof attendanceDrafts!=='undefined'&&[...attendanceDrafts.values()].some(rows=>[...rows.values()].some(r=>r.dirty)),refresh:async()=>{
+import('/portal/system-sync.js').then(({startSystemSync})=>startSystemSync({api,el,active:()=>!!me&&!!token,hasDraft:()=>!!document.querySelector('#registrations-area.is-current #registration-detail:not([hidden]) form')||!!document.querySelector('#review-detail:not([hidden]) form')||!!document.querySelector('#quick-intakes-area .intake-task[open]')||!!document.querySelector('.quick-intake .quick-entry[open]')||typeof attendanceDrafts!=='undefined'&&[...attendanceDrafts.values()].some(rows=>[...rows.values()].some(r=>r.dirty)),refresh:async()=>{
  const reopenCall=typeof classSelected!=='undefined'&&classSelected&&typeof currentPanel!=='undefined'&&currentPanel==='attendance-area'&&!$('class-detail')?.hidden?classSelected:null;
+ const registrationBox=$('registration-detail'),reopenRegistration=typeof currentPanel!=='undefined'&&currentPanel==='registrations-area'&&!registrationBox?.hidden?registrationBox?.dataset.registrationId:null,registrationRequest=typeof review==='function'?review.request:null;
  me=await api('/me');
  await load();
- for(const box of document.querySelectorAll('section[id$="-detail"]')){if(reopenCall&&box.id==='class-detail')continue;box.hidden=true;box.replaceChildren()}
+ for(const box of document.querySelectorAll('section[id$="-detail"]')){if(reopenCall&&box.id==='class-detail'||reopenRegistration&&box.id==='registration-detail')continue;box.hidden=true;box.replaceChildren()}
+ if(reopenRegistration&&currentPanel==='registrations-area'&&review.request===registrationRequest){try{await review(reopenRegistration)}catch(error){notice(error.message||'Não foi possível atualizar a inscrição. Busque o protocolo novamente.',true)}}
  if(reopenCall){try{await classDetail(reopenCall)}catch(error){const box=$('class-detail');if(box){box.replaceChildren();box.hidden=true}notice(error.message||'Não foi possível atualizar a chamada. Abra novamente para conferir.',true)}}
  if(chosen&&typeof currentPanel!=='undefined'&&currentPanel==='students-area'){if(students.some(s=>s.id===chosen))await detail(chosen);else{$('detail').hidden=true;$('detail').replaceChildren();chosen=''}}
 }})).catch(()=>notice('A atualização automática não iniciou. Atualize a página para tentar novamente.',true));
