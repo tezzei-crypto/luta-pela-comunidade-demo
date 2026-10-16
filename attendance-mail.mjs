@@ -17,7 +17,7 @@ export function attendanceMail({db,get,all,run,tx,env,transport,recipients,email
  function enqueue(){const day=dayOf(clock());
   const fresh=all("SELECT n.*,a.unit,a.group_id,a.signal,a.workflow FROM attendance_notices n JOIN attendance_alerts a ON a.id=n.alert_id WHERE n.status IN ('pending','retry') AND n.attempts=0 AND n.first_attempt=0 AND n.batch_id='' ORDER BY n.recipient_id,n.alert_id").filter(eligible);
   for(const recipient of new Set(fresh.map(n=>n.recipient_id))){
-   if(get('SELECT 1 FROM attendance_mail_batches WHERE recipient_id=? AND day=?',recipient,day))continue;
+   if(get("SELECT 1 FROM attendance_mail_batches WHERE recipient_id=? AND (day=? OR state IN ('pending','sending'))",recipient,day))continue;
    const items=fresh.filter(n=>n.recipient_id===recipient),r=eligible(items[0]);
    const id=createHash('sha256').update(recipient+'\n'+day).digest('hex');
    const payload=JSON.stringify({from:env.MAIL_FROM,to:[r.email],subject:'Frequência: acompanhamento de faltas — Luta pela Comunidade',text:`Há ${items.length} novo(s) alerta(s) de ${threshold()} ou mais faltas consecutivas sem justificativa sob sua responsabilidade.\nEntre no painel privado para conferir os lançamentos e combinar o contato acolhedor com as famílias.\n${env.PUBLIC_ORIGIN||env.RENDER_EXTERNAL_URL}/portal/#absence-attention-area\n\nA justificativa interrompe a sequência. Registros sem marcação não contam como falta. Este resumo reúne os novos alertas disponíveis no momento do envio, uma vez ao dia por destinatário. Novos casos continuam disponíveis imediatamente no painel. Não contém nomes ou contatos das crianças.`});

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import {quotaAwareTransport,retryAfterQuota,deferRejectedEmail} from './resend-quota.mjs';
+import {registrationNotices} from './registration-notices.mjs';
 
 const url='https://api.resend.com/emails',options={method:'POST'};
 function fixture(t){const db=new DatabaseSync(':memory:');t.after(()=>db.close());return {db,get:(sql,...p)=>db.prepare(sql).get(...p),run:(sql,...p)=>db.prepare(sql).run(...p)};}
@@ -33,4 +34,14 @@ test('Resposta não registra segredo; outros provedores e chamadas de leitura co
  const f=fixture(t),calls=[],transport=async(u)=>{calls.push(u);return Response.json({name:'daily_quota_exceeded'},{status:429})};
  const send=quotaAwareTransport({...f,transport,key:'fake-private-key'});await send(url,options);await send('https://www.googleapis.com/upload/drive/v3/files',options);await send(url,{method:'GET'});
  assert.equal(calls.length,3);assert.doesNotMatch(JSON.stringify(f.get('SELECT * FROM mail_provider_pause')),/fake-private-key/);
+});
+
+test('Inscrição pública e agendador compartilham pausa mesmo com transporte explícito',async t=>{
+ const f=fixture(t);f.db.exec('CREATE TABLE registrations(id TEXT PRIMARY KEY)');let now=Date.parse('2026-10-16T12:00:00Z'),calls=0,limited=true;
+ const raw=async()=>{calls++;return limited?Response.json({name:'daily_quota_exceeded'},{status:429}):Response.json({id:'accepted'});};
+ const transport=quotaAwareTransport({...f,transport:raw,key:'fake',clock:()=>now});
+ const notices=registrationNotices({...f,all:(sql,...p)=>f.db.prepare(sql).all(...p),tx:fn=>{f.db.exec('BEGIN IMMEDIATE');try{const r=fn();f.db.exec('COMMIT');return r;}catch(e){f.db.exec('ROLLBACK');throw e;}},env:{RESEND_API_KEY:'fake',MAIL_FROM:'sender@example.test',PORTAL_INTAKE_ACTIVE:'true'},transport,clock:()=>now});
+ for(const id of ['one','two']){f.run('INSERT INTO registrations VALUES(?)',id);notices.enqueue(id);await notices.deliver({id,send:raw});}
+ assert.equal(calls,1);assert.equal(transport.mailStatus().paused,true);assert.equal(notices.status('one').attempts,0);assert.equal(notices.status('two').state,'pending');
+ now=Date.parse(transport.mailStatus().retry_at)+1000;limited=false;assert.equal((await notices.deliver()).accepted,2);assert.equal(calls,3);await notices.deliver({send:raw});assert.equal(calls,3);
 });

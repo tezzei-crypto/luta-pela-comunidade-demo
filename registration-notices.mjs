@@ -1,4 +1,4 @@
-import {deferRejectedEmail} from './resend-quota.mjs';
+import {deferRejectedEmail,quotaAwareTransport} from './resend-quota.mjs';
 import {randomUUID} from 'node:crypto';
 
 export const REGISTRATION_RECIPIENTS=['participante@lutapelacomunidade.com.br','tezzei@gmail.com'];
@@ -24,6 +24,9 @@ export function registrationNotices({db,get,all,run,tx,env,transport=fetch,email
   return r?{...r,next_attempt:r.next_attempt?new Date(r.next_attempt).toISOString():null}:null;
  }
  async function deliver({id,send=transport}={}){
+  // Public registration supplies its transport explicitly. Share the same durable
+  // pause as scheduled jobs, without changing the test injection contract.
+  if(send!==transport)send=quotaAwareTransport({db,get,run,transport:send,clock,key:env.RESEND_API_KEY||''});
   const result={accepted:0,failed:0};
   if(!env.RESEND_API_KEY||!env.MAIL_FROM)return result;
   const now=clock();
