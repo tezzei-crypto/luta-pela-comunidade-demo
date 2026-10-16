@@ -10,7 +10,7 @@ async function showStudentProgression(id,box){
  const dayLabel=value=>value?value.split('-').reverse().join('/'):'Não cadastrada';
  section.append(el('h3','Frequência e graduação'));
  for(const [label,value]of [['Presenças',r.totals.present],['Faltas sem justificativa',r.totals.absent],['Faltas justificadas',r.totals.justified],['Aulas sem chamada concluída',r.totals.unmarked],['Faixa atual',p.belt||'Não cadastrada'],['Graus confirmados',p.version?p.degrees+' de 4':'Não cadastrados']]){const card=el('div',undefined,{class:'info-box'});card.append(el('strong',String(value)),el('p',label));grid.append(card)}
- section.append(grid,el('p','Totais de todas as chamadas registradas até hoje. Aulas canceladas não contam como presença nem falta.',{class:'muted'}));
+ section.append(grid,el('p',r.official_start_date?'Contagem oficial a partir de '+dayLabel(r.official_start_date)+'. Aulas anteriores são testes e ficam fora dos totais e da graduação.':'Totais de todas as chamadas registradas até hoje. Aulas canceladas não contam como presença nem falta.',{class:'muted'}));
  if(p.version){
   section.append(el('p','Última graduação: '+dayLabel(p.last_graduation_date)),el('p',r.cycle.present+' presenças desde a última graduação · '+r.cycle.absent+' faltas · '+r.cycle.justified+' justificadas.'));
   if(r.exam_ready)section.append(el('strong','Quatro graus confirmados: apto para solicitar o exame de faixa.'));
@@ -24,10 +24,10 @@ async function showStudentProgression(id,box){
  const history=el('details');history.append(el('summary','Ver histórico de presenças e faltas'));
  const table=el('table'),thead=el('thead'),header=el('tr'),tbody=el('tbody');for(const text of ['Data','Turma / horário','Situação'])header.append(el('th',text,{scope:'col'}));thead.append(header);table.append(thead,tbody);
  const labels={present:'Presente',absent:'Falta',justified:'Falta justificada',unmarked:'Sem marcação'};
- for(const row of r.attendance){const tr=el('tr');for(const text of [dayLabel(row.day),row.label+' · '+row.time,row.cancelled?'Aula cancelada':labels[row.status]])tr.append(el('td',text));tbody.append(tr)}
+ for(const row of r.attendance){const tr=el('tr');for(const text of [dayLabel(row.day),row.label+' · '+row.time,(row.testing?'Teste — fora da contagem oficial · ':'')+(row.cancelled?'Aula cancelada':labels[row.status])])tr.append(el('td',text));tbody.append(tr)}
  const scroll=el('div',undefined,{class:'scroll',tabindex:'0','aria-label':'Histórico de frequência'});scroll.append(table);history.append(scroll);
  if(!r.attendance.length)history.append(el('p','Nenhuma chamada registrada para este aluno.'));
- if(r.attendance_count>200)history.append(el('p','Exibindo as 200 aulas mais recentes. Os totais consideram todas as aulas registradas.'));
+ if(r.attendance_count>200)history.append(el('p','Exibindo as 200 aulas mais recentes. Os totais consideram todas as aulas do período oficial.'));
  section.append(history);
  const belts=Object.fromEntries(['Branca','Cinza e branca','Cinza','Cinza e preta','Amarela e branca','Amarela','Amarela e preta','Laranja e branca','Laranja','Laranja e preta','Verde e branca','Verde','Verde e preta','Azul','Roxa','Marrom','Preta'].map(x=>[x,x]));
  function checked(form,text){const label=el('label',undefined,{class:'check-label'}),input=el('input',undefined,{type:'checkbox',required:''});label.append(input,document.createTextNode(text));form.append(label);return input}

@@ -8,7 +8,7 @@ const cleanReason = p => {
 };
 function keys(p, permitted) {if(!p || Array.isArray(p) || Object.keys(p).some(k=>!permitted.includes(k))) fail('Dados de graduação inválidos.');}
 
-export function studentProgression({db,get,all,run,tx,requireRole,audit}) {
+export function studentProgression({db,get,all,run,tx,requireRole,audit,officialStart=()=>''}) {
   db.exec(`CREATE TABLE IF NOT EXISTS graduation_policy(id INTEGER PRIMARY KEY CHECK(id=1),lessons_per_degree INTEGER NOT NULL,version INTEGER NOT NULL);
     INSERT OR IGNORE INTO graduation_policy VALUES(1,48,1);
     CREATE TABLE IF NOT EXISTS student_graduation(student_id TEXT PRIMARY KEY REFERENCES students(id),belt TEXT NOT NULL,degrees INTEGER NOT NULL CHECK(degrees BETWEEN 0 AND 4),last_graduation_date TEXT NOT NULL,version INTEGER NOT NULL);
@@ -34,17 +34,17 @@ export function studentProgression({db,get,all,run,tx,requireRole,audit}) {
   }
   function count(list) {
     const totals={present:0,absent:0,justified:0,unmarked:0,cancelled:0};
-    for(const row of list) {if(row.cancelled)totals.cancelled++;else totals[row.status]++;}
+    for(const row of list) {if(row.day<officialStart())continue;if(row.cancelled)totals.cancelled++;else totals[row.status]++;}
     const denominator=totals.present+totals.absent+totals.justified;
     return {...totals,frequency:denominator?Math.round(totals.present/denominator*1000)/10:null};
   }
   function snapshot(id,until=localDay()) {
     const p=profile(id),rule=policy(),list=rows(id,until),cycle=p.version?list.filter(r=>r.day>p.last_graduation_date):[];
     const current=count(cycle),remaining=p.version?Math.max(0,rule.lessons_per_degree-current.present):null;
-    return {profile:p,policy:rule,totals:count(list),cycle:current,remaining_for_degree:p.degrees>=4?0:remaining,
+    return {official_start_date:officialStart(),profile:p,policy:rule,totals:count(list),cycle:current,remaining_for_degree:p.degrees>=4?0:remaining,
       remaining_for_exam:p.version?(p.degrees>=4?0:Math.max(0,3-p.degrees)*rule.lessons_per_degree+remaining):null,
       degree_ready:!!p.version&&p.degrees<4&&remaining===0,exam_ready:!!p.version&&p.degrees===4,
-      attendance:list.slice(0,200),attendance_count:list.length,
+      attendance:list.slice(0,200).map(r=>({...r,testing:r.day<officialStart()})),attendance_count:list.length,
       history:all('SELECT id,action,recorded_at,before_json,after_json FROM graduation_history WHERE student_id=? ORDER BY id DESC LIMIT 100',id).map(r=>({...r,before:JSON.parse(r.before_json),after:JSON.parse(r.after_json),before_json:undefined,after_json:undefined}))};
   }
   function persist(actor,id,p,old,action,reason,evidence={}) {
@@ -68,7 +68,7 @@ export function studentProgression({db,get,all,run,tx,requireRole,audit}) {
       const old=profile(id);version(p,old);date(p.date,student);const rule=policy();
       if(p.policy_version!==rule.version)fail('A regra de graduação mudou. Reabra a ficha.',409);
       if(!old.version||p.date<=old.last_graduation_date||p.checked!==true)fail('Confira a graduação e informe uma data posterior à última graduação.');
-      const state=snapshot(id,p.date),evidence={policy:rule,presences:rows(id,p.date).filter(r=>!r.cancelled&&r.status==='present'&&r.day>old.last_graduation_date)};
+      const state=snapshot(id,p.date),evidence={policy:rule,presences:rows(id,p.date).filter(r=>r.day>=officialStart()&&!r.cancelled&&r.status==='present'&&r.day>old.last_graduation_date)};
       if(p.action==='degree') {
         if(!state.degree_ready)fail('O aluno ainda não atingiu as presenças necessárias ou já possui quatro graus.',409);
         return persist(actor,id,{...old,degrees:old.degrees+1,last_graduation_date:p.date},old,'degree',cleanReason(p),evidence);

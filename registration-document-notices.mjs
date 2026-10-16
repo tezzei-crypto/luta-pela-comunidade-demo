@@ -9,7 +9,7 @@ const line=value=>String(value).replace(/\s+/g,' ').trim();
 const dayOf=now=>new Intl.DateTimeFormat('en-CA',{timeZone:zone,year:'numeric',month:'2-digit',day:'2-digit'}).format(now);
 const hourOf=now=>Number(new Intl.DateTimeFormat('en-GB',{timeZone:zone,hour:'2-digit',hourCycle:'h23'}).format(now));
 
-export function registrationDocumentNotices({db,get,all,run,tx,requireRole,scope,env={},transport=fetch,clock=()=>Date.now()}){
+export function registrationDocumentNotices({db,get,all,run,tx,requireRole,scope,env={},transport=fetch,emailAllowed=()=>true,clock=()=>Date.now()}){
  db.exec(`CREATE TABLE IF NOT EXISTS registration_document_outbox(
   id TEXT PRIMARY KEY,recipient_id TEXT NOT NULL REFERENCES members(user_id),email TEXT NOT NULL,day TEXT NOT NULL,
   snapshot TEXT NOT NULL,payload TEXT NOT NULL,state TEXT NOT NULL DEFAULT 'pending',attempts INTEGER NOT NULL DEFAULT 0,
@@ -19,6 +19,7 @@ export function registrationDocumentNotices({db,get,all,run,tx,requireRole,scope
   CREATE INDEX IF NOT EXISTS registration_document_due ON registration_document_outbox(state,next_attempt);`);
  const configured=()=>!!env.RESEND_API_KEY;
  function recipient(id){
+  if(!emailAllowed(id))return null;
   const m=get("SELECT user_id,lower(email) AS email FROM members WHERE user_id=? AND active=1 AND role='secretary'",id);
   if(!m||! /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(m.email))return null;
   const units=scope.units(id);return units.length?{...m,units}:null;

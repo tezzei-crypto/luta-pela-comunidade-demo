@@ -7,7 +7,7 @@ export function registrationNotice(id,env){
  return {from:env.MAIL_FROM,to:REGISTRATION_RECIPIENTS,subject:'Nova inscrição para análise — Luta pela Comunidade',text:`Uma nova inscrição foi recebida no painel administrativo.\n\nProtocolo: ${id}\n\nAbrir inscrição para análise (é necessário entrar com seu email autorizado):\n${link}\n\nConfira a identificação, a autorização do responsável e os documentos. Se faltar algo, registre a complementação e entre em contato com a família. O aviso não significa aprovação e não contém documentos pessoais.`};
 }
 
-export function registrationNotices({db,get,all,run,tx,env,transport=fetch,clock=()=>Date.now()}){
+export function registrationNotices({db,get,all,run,tx,env,transport=fetch,emailAllowedAddress=()=>true,clock=()=>Date.now()}){
  db.exec(`CREATE TABLE IF NOT EXISTS registration_notification_outbox(
   registration_id TEXT PRIMARY KEY REFERENCES registrations(id),payload TEXT NOT NULL DEFAULT '',
   state TEXT NOT NULL DEFAULT 'pending',attempts INTEGER NOT NULL DEFAULT 0,first_attempt INTEGER,
@@ -35,7 +35,10 @@ export function registrationNotices({db,get,all,run,tx,env,transport=fetch,clock
     if(r.first_attempt!==null&&(at-r.first_attempt>=23*3600000||r.attempts>=8)){
      run("UPDATE registration_notification_outbox SET state='needs_attention',lease_until=0 WHERE registration_id=?",r.registration_id);return null;
     }
-    const payload=r.payload||JSON.stringify(registrationNotice(r.registration_id,env)),claim=randomUUID();
+    const message=r.payload?JSON.parse(r.payload):registrationNotice(r.registration_id,env);
+    const allowed=message.to.filter(emailAllowedAddress);
+    if(!allowed.length||r.attempts>0&&allowed.length!==message.to.length){run("UPDATE registration_notification_outbox SET state='cancelled',lease_until=0 WHERE registration_id=?",r.registration_id);return null;}
+    const payload=JSON.stringify({...message,to:allowed}),claim=randomUUID();
     run("UPDATE registration_notification_outbox SET state='sending',payload=?,attempts=attempts+1,first_attempt=COALESCE(first_attempt,?),lease_until=?,claim=? WHERE registration_id=?",payload,at,at+120000,claim,r.registration_id);
     return {...r,payload,claim,attempts:r.attempts+1};
    });

@@ -2,6 +2,7 @@
 async function loadStaffAccounts(){
  const {accounts}=await api('/staff-accounts');const box=$('staff-account-list');box.replaceChildren();
  for(const a of accounts){const card=el('div',undefined,{class:'member'});card.append(el('p',a.role==='admin'?'Todos os núcleos · administração geral':a.units?.length?'Núcleos: '+a.units.map(u=>classUnits[u]).join(', '):'Sem núcleo atribuído · acesso aos dados bloqueado'),el('p',a.role==='admin'?'Pode lançar presença em todas as turmas':a.secretary_level==='general'?'Secretaria geral · pode lançar presença nos três núcleos':'Secretaria de núcleo · consulta a chamada; não lança presença'),el('strong',a.name||'Nome ainda não informado'),el('p',a.email+' · '+labels[a.role]+' · '+(a.active?'Ativo':'Desativado')));
+  card.append(el('p',a.email_enabled===false?'Emails do sistema: desativados':'Emails do sistema: ativados'));
   if(me.role==='admin'||a.role==='secretary'){const b=el('button','Editar cadastro e acesso',{class:'secondary'});b.addEventListener('click',()=>staffAccountForm(a));card.append(b)}box.append(card)}
 }
 function staffAccountForm(a={version:0,role:'secretary',active:true}){
@@ -17,8 +18,9 @@ function staffAccountForm(a={version:0,role:'secretary',active:true}){
  form.append(el('p','Administradores e professores vinculados também podem lançar. Toda alteração registra o autor, a data e o horário. Para secretaria geral, selecione os três núcleos.'));
  const active=field(form,'Situação do acesso','active',String(a.active),{options:{true:'Ativo — pode entrar',false:'Desativado — acesso bloqueado'},readOnly:own});
  form.append(el('p',own?'Você pode completar seus dados. A própria função e o próprio acesso não podem ser desativados nesta tela.':'Desativar bloqueia a entrada e encerra as sessões da conta. Os registros e o histórico são preservados.',{class:'muted'}));
+ const emailEnabled=field(form,'Receber emails do sistema','email_enabled',String(a.email_enabled!==false),{options:{true:'Sim — receber emails',false:'Não — silenciar emails'}});form.append(el('p','Inclui avisos de faltas, chamadas, matrículas, atividades e backups aplicáveis a este perfil. O código solicitado para entrar continua disponível. Emails já enviados não podem ser retirados.',{class:'muted'}));
  const save=el('button',a.user_id?'Salvar cadastro e acesso':'Cadastrar acesso');form.append(save);
- form.addEventListener('submit',action(async()=>{const data={...Object.fromEntries(new FormData(form)),role:role.value,units:role.value==='admin'?[]:new FormData(form).getAll('units'),active:active.value==='true',version:a.version};const p=await api('/staff-accounts'+(a.user_id?'/'+a.user_id:''),{method:a.user_id?'PATCH':'POST',data});me=await api('/me');await loadMembers();await loadStaffAccounts();staffAccountForm(p.account);box.prepend(el('p',p.message,{role:'status',class:'form-success'}));notice(p.message)}));
+ form.addEventListener('submit',action(async()=>{const data={...Object.fromEntries(new FormData(form)),role:role.value,units:role.value==='admin'?[]:new FormData(form).getAll('units'),active:active.value==='true',email_enabled:emailEnabled.value==='true',version:a.version};const p=await api('/staff-accounts'+(a.user_id?'/'+a.user_id:''),{method:a.user_id?'PATCH':'POST',data});me=await api('/me');await loadMembers();await loadStaffAccounts();staffAccountForm(p.account);box.prepend(el('p',p.message,{role:'status',class:'form-success'}));notice(p.message)}));
  const cancel=el('button','Fechar cadastro',{type:'button',class:'secondary'});cancel.addEventListener('click',()=>{box.hidden=true;$('staff-account-new').focus()});form.append(cancel);box.append(form);box.scrollIntoView({block:'start'});box.querySelector('input')?.focus({preventScroll:true});
 }
 function setupStaffAccounts(){

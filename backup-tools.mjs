@@ -6,7 +6,7 @@ import {driveConfigured,uploadDriveBackup} from './backup-drive.mjs';
 import {fail} from './portal-domain.mjs';
 import {backupNotifications} from './backup-notices.mjs';
 
-export function backupTools({db,get,all,run,tx,requireRole,audit,env,transport=fetch}){
+export function backupTools({db,get,all,run,tx,requireRole,audit,env,transport=fetch,emailAllowed=()=>true}){
  const directory=path.join(path.resolve(env.PORTAL_DATA_DIR),'recovery-backups');let running=false;
  db.exec(`CREATE TABLE IF NOT EXISTS recovery_settings(id INTEGER PRIMARY KEY CHECK(id=1),public_key TEXT NOT NULL DEFAULT '',key_id TEXT NOT NULL DEFAULT '',key_saved INTEGER NOT NULL DEFAULT 0,enabled INTEGER NOT NULL DEFAULT 0,interval_hours INTEGER NOT NULL DEFAULT 24,drive_folder TEXT NOT NULL DEFAULT '',version INTEGER NOT NULL DEFAULT 1,updated_at TEXT);
  INSERT OR IGNORE INTO recovery_settings(id) VALUES(1);
@@ -18,7 +18,7 @@ export function backupTools({db,get,all,run,tx,requireRole,audit,env,transport=f
  const publicSettings=()=>{const s=settings();return {configured:!!s.public_key,key_id:s.key_id,key_saved:!!s.key_saved,enabled:!!s.enabled,interval_hours:s.interval_hours,drive_folder:s.drive_folder,drive_connected:driveConfigured(env),version:s.version,updated_at:s.updated_at}};
  const records=()=>all('SELECT id,name,created_at,state,size,sha256,files,objects,key_id,commit_sha,drive_id,drive_verified_at,downloaded_at,verified_at,error FROM recovery_packages ORDER BY created_at DESC LIMIT 40');
  const currentStatus=()=>{const packages=records(),latest=packages[0],last=get('SELECT created_at,state,error FROM recovery_runs ORDER BY id DESC LIMIT 1'),s=settings();return {settings:publicSettings(),running,last_run:last||null,packages,overdue:!latest||Date.now()-Date.parse(latest.created_at)>s.interval_hours*3600000+1800000,external_pending:!latest?.drive_verified_at,restore_pending:!packages.some(p=>p.verified_at&&p.key_id===s.key_id&&Date.now()-Date.parse(p.verified_at)<30*86400000)}};
- const notifications=backupNotifications({db,get,all,run,env,transport,status:currentStatus});
+ const notifications=backupNotifications({db,get,all,run,env,transport,emailAllowed,status:currentStatus});
  function recordFile(row){if(!row||!/^backup-[a-zA-Z0-9-]+\.lpcb$/.test(row.name))fail('Backup não localizado.',404);return path.join(directory,row.name)}
  async function generate(actor){
   if(actor)manager(actor);if(running)fail('Há um backup em execução.',409);const s=settings();if(!s.public_key||!s.key_saved)fail('Cadastre a chave pública e confirme a guarda da chave de recuperação.');

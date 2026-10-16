@@ -4,10 +4,13 @@ import {fail} from './portal-domain.mjs';
 export function staffAccounts({db,get,all,run,tx,requireRole,scope,audit}){
  db.exec(`CREATE TABLE IF NOT EXISTS administrative_profiles(user_id TEXT PRIMARY KEY REFERENCES members(user_id),name TEXT NOT NULL,phone TEXT NOT NULL DEFAULT '',version INTEGER NOT NULL DEFAULT 1,updated_at TEXT NOT NULL)`);
  if(!all('PRAGMA table_info(administrative_profiles)').some(c=>c.name==='secretary_level'))db.exec("ALTER TABLE administrative_profiles ADD COLUMN secretary_level TEXT NOT NULL DEFAULT 'local' CHECK(secretary_level IN ('local','general'))");
- const query=`SELECT m.user_id,m.email,m.role,m.active,COALESCE(p.name,'') AS name,COALESCE(p.phone,'') AS phone,COALESCE(p.version,0) AS version,p.updated_at,COALESCE(p.secretary_level,'local') AS secretary_level FROM members m LEFT JOIN administrative_profiles p ON p.user_id=m.user_id WHERE m.role IN ('admin','secretary')`;
- const clean=r=>r?{...r,active:!!r.active,units:r.role==='admin'?[]:all('SELECT unit FROM administrative_units WHERE user_id=? ORDER BY unit',r.user_id).map(u=>u.unit)}:undefined;
+ if(!all('PRAGMA table_info(administrative_profiles)').some(c=>c.name==='email_enabled'))db.exec('ALTER TABLE administrative_profiles ADD COLUMN email_enabled INTEGER NOT NULL DEFAULT 1 CHECK(email_enabled IN (0,1))');
+ const query=`SELECT m.user_id,m.email,m.role,m.active,COALESCE(p.name,'') AS name,COALESCE(p.phone,'') AS phone,COALESCE(p.version,0) AS version,p.updated_at,COALESCE(p.email_enabled,1) AS email_enabled,COALESCE(p.secretary_level,'local') AS secretary_level FROM members m LEFT JOIN administrative_profiles p ON p.user_id=m.user_id WHERE m.role IN ('admin','secretary')`;
+ const clean=r=>r?{...r,active:!!r.active,email_enabled:!!r.email_enabled,units:r.role==='admin'?[]:all('SELECT unit FROM administrative_units WHERE user_id=? ORDER BY unit',r.user_id).map(u=>u.unit)}:undefined;
  const row=id=>clean(get(query+' AND m.user_id=?',id));
  return {
+  canReceiveSystemEmail:id=>get('SELECT email_enabled FROM administrative_profiles WHERE user_id=?',id)?.email_enabled!==0,
+  canReceiveSystemEmailAddress:email=>get('SELECT p.email_enabled FROM administrative_profiles p JOIN members m ON m.user_id=p.user_id WHERE lower(m.email)=?',email.toLowerCase())?.email_enabled!==0,
   async staffAccounts(actor){requireRole(actor,['admin']);return all(query+' ORDER BY m.role,m.email').map(clean)},
   async saveStaffAccount(actor,id,p){return tx(()=>{
    const who=requireRole(actor,['admin']);
@@ -18,6 +21,7 @@ export function staffAccounts({db,get,all,run,tx,requireRole,scope,audit}){
    const secretaryLevel=p.role==='secretary'?(p.secretary_level??old?.secretary_level??'local'):'local';
    if(!['local','general'].includes(secretaryLevel))fail('Tipo de secretaria inválido.');
    if(secretaryLevel==='general'&&units.length!==3)fail('A secretaria geral deve ter os três núcleos explicitamente selecionados.');
+   const emailEnabled=p.email_enabled??old?.email_enabled??true;if(p.email_enabled===null||typeof emailEnabled!=='boolean')fail('Escolha se a conta receberá emails do sistema.');
    const name=typeof p.name==='string'?p.name.trim():'',phone=typeof p.phone==='string'?p.phone.trim():'';
    const email=typeof p.email==='string'?p.email.trim().toLowerCase():'';
    if(name.length<3||name.length>160||/[\x00-\x1f\x7f]/.test(name)||!/^\+?[\d ()-]{10,25}$/.test(phone)||phone.replace(/\D/g,'').length<10||email.length>254||!/^\S+@\S+\.\S+$/.test(email))fail('Informe nome completo, email válido e telefone com DDD.');
@@ -34,6 +38,8 @@ export function staffAccounts({db,get,all,run,tx,requireRole,scope,audit}){
    run('DELETE FROM administrative_units WHERE user_id=?',uid);for(const unit of units)run('INSERT INTO administrative_units(user_id,unit) VALUES(?,?)',uid,unit);
    run('INSERT INTO administrative_profiles(user_id,name,phone,version,updated_at) VALUES(?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET name=excluded.name,phone=excluded.phone,version=excluded.version,updated_at=excluded.updated_at',uid,name,phone,version,now);
    run('UPDATE administrative_profiles SET secretary_level=? WHERE user_id=?',secretaryLevel,uid);
+   run('UPDATE administrative_profiles SET email_enabled=? WHERE user_id=?',Number(emailEnabled),uid);
+   if(old?.email_enabled!==emailEnabled)audit(actor,'staff.email_notifications:'+uid+':'+String(old?.email_enabled??true)+'>'+emailEnabled);
    if(old?.secretary_level!==secretaryLevel)audit(actor,`staff.secretary_level:${uid}:${old?.secretary_level||'local'}>${secretaryLevel}`);
    audit(actor,`staff.${old?'update':'create'}:${uid}:${old?.role||'new'}>${p.role}:${old?.active??'new'}>${p.active}:v${version}:units=${(old?.units||[]).join(',')}>${units.join(',')}`);
    return row(uid);

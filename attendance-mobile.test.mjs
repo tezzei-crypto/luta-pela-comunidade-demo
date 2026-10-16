@@ -25,6 +25,14 @@ test('Chamada móvel: um toque marca, busca não perde escolhas e próximo não 
  const f=ui(t);await f.run("classDetail('class-a')");const buttons=f.w.document.querySelectorAll('[data-status=present]');buttons[0].click();assert.equal(buttons[0].getAttribute('aria-pressed'),'true');assert.match(f.w.document.querySelector('.save-call').textContent,/1 de 2 marcados.*1 alteração/);
  const search=f.w.document.querySelector('[type=search]');search.value='alvaro';search.dispatchEvent(new f.w.Event('input'));assert.equal(f.w.document.querySelectorAll('fieldset[hidden]').length,1);f.w.document.querySelector('.attendance-toolbar button').click();assert.equal(f.w.document.activeElement.dataset.studentId,'UND1_000002');assert.equal(search.value,'');assert.equal(buttons[0].getAttribute('aria-pressed'),'true');assert.equal(f.requests.filter(r=>r.method==='POST').length,0);
 });
+
+test('Chamada móvel: aluno inativado após abertura permanece visível, com aviso e marcação histórica',async t=>{
+ const f=ui(t);f.rows[0].enrollment_status='inactive';await f.run("classDetail('class-a')");
+ assert.match(f.w.document.querySelector('.attendance-person').textContent,/Cadastro atual: inativo.*lista original/);
+ assert.match(f.w.document.querySelector('.save-call').textContent,/0 de 2 marcados/);
+ f.w.document.querySelector('[data-status=absent]').click();f.w.document.querySelector('.attendance-form').dispatchEvent(new f.w.Event('submit',{cancelable:true}));await new Promise(r=>setImmediate(r));
+ assert.equal(f.rows[0].status,'absent');assert.equal(f.rows[0].enrollment_status,'inactive');assert.equal(f.requests.filter(r=>r.method==='POST').length,1);
+});
 test('Chamada móvel: falha preserva rascunho e nova tentativa salva somente mudanças com autoria',async t=>{
  const f=ui(t,{fail:true});await f.run("classDetail('class-a')");f.w.document.querySelector('[data-status=present]').click();let form=f.w.document.querySelector('.attendance-form');form.dispatchEvent(new f.w.Event('submit',{cancelable:true}));await new Promise(r=>setImmediate(r));assert.match(form.textContent,/Sem conexão/);assert.equal(f.rows[0].status,'unmarked');assert.equal(form.querySelector('[data-status=present]').getAttribute('aria-pressed'),'true');assert.equal(form.querySelector('.save-call button').disabled,false);
  f.model.fail=false;form.dispatchEvent(new f.w.Event('submit',{cancelable:true}));await new Promise(r=>setImmediate(r));assert.equal(f.rows[0].status,'present');assert.equal(f.rows[1].status,'unmarked');assert.match(f.w.document.querySelector('.attendance-attribution').textContent,/Professor Fictício/);assert.equal(f.w.document.querySelector('.save-call button').disabled,true);assert.equal(f.requests.find(r=>r.method==='POST').data.rows.length,1);

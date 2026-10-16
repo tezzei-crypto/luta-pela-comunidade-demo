@@ -1,6 +1,6 @@
 import {recordDiagnostic} from './diagnostic-http.mjs';
 import {causeFor} from './diagnostics.mjs';
-import {createStore} from './portal-store.mjs';
+import {createStore,portalConfigured} from './portal-store.mjs';
 import {persistRegistration} from './registration-persistence.mjs';
 import {REGISTRATION_RECIPIENTS} from './registration-notices.mjs';
 export const RECIPIENTS=REGISTRATION_RECIPIENTS;
@@ -58,7 +58,8 @@ export async function handleRegistration(request,env={},send=fetch,injectedStore
  const timestamp=new Date().toISOString();
  const text=`SOLICITAÇÃO DE INSCRIÇÃO — LUTA PELA COMUNIDADE\n\nAluno: ${student}\nNascimento: ${birth}\nIdade: ${age} anos\nNúcleo: ${unit}\n\nResponsável: ${guardian}\nVínculo: ${relationship}\nE-mail: ${email}\nTelefone: ${phone}\n\nDECLARAÇÕES ACEITAS (versão 2026-10-05)\n1. Declaro ser mãe, pai ou responsável legal e autorizo a participação do aluno nas atividades do projeto, após avaliação da documentação e confirmação da vaga.\n2. Estou ciente da exigência de atestado médico que declare aptidão para práticas esportivas e de que a participação depende da conferência desse documento pela equipe.\n3. Autorizo o tratamento dos dados e documentos enviados, incluindo o atestado médico e a foto, para análise da inscrição, conferência documental e registro interno. A foto não está autorizada para divulgação pública. Estou ciente do envio aos dois e-mails da coordenação indicados no formulário.\n\nResponsável declarante: ${guardian}\nRegistrado em UTC: ${timestamp}\nProtocolo: ${id}\n\nA inscrição não garante vaga. A equipe deve conferir os documentos, a responsabilidade legal e a aptidão indicada no atestado antes da participação.\nDocumentos pessoais e informação de saúde: acesso restrito à equipe responsável.`;
  try{
-  const response=await send('https://api.resend.com/emails',{method:'POST',headers:{Authorization:`Bearer ${env.RESEND_API_KEY}`,'Content-Type':'application/json','Idempotency-Key':`registration-${id}`},body:JSON.stringify({from:env.MAIL_FROM,to:RECIPIENTS,reply_to:email,subject,text,attachments}),signal:AbortSignal.timeout(25000)});
+  const to=portalConfigured(env)?RECIPIENTS.filter(email=>(injectedStore||createStore(env)).canReceiveSystemEmailAddress(email)):RECIPIENTS;if(!to.length)return reply(503,'Envio temporariamente indisponível. Contate a secretaria.');
+  const response=await send('https://api.resend.com/emails',{method:'POST',headers:{Authorization:`Bearer ${env.RESEND_API_KEY}`,'Content-Type':'application/json','Idempotency-Key':`registration-${id}`},body:JSON.stringify({from:env.MAIL_FROM,to,reply_to:email,subject,text,attachments}),signal:AbortSignal.timeout(25000)});
   if(!response.ok)return reply(502,'O serviço de e-mail não confirmou o envio. Seus campos foram preservados; tente novamente.');
   const result=await response.json();if(!result.id)return reply(502,'Não foi possível confirmar o envio. Tente novamente.');
   return reply(200,'Sua solicitação foi encaminhada à coordenação. O envio não garante vaga; aguarde a conferência dos documentos e o contato da equipe.',{protocol:id});

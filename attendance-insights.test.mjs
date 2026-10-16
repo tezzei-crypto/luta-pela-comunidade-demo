@@ -29,6 +29,77 @@ async function fixture(t,options={}){
  const care=async(role,unit='amavale')=>{const email=role+'-'+unit+'@example.test',p={name:'Profissional Fictício',email,role,phone:'24999999999',rg:'TESTE',cpf:'52998224725',council_number:'TESTE',council_region:'RJ',review_until:'2099-01-01',status:'pending',version:0,units:[unit]};let user=await store.saveProfessional(admin.user_id,null,p);for(const kind of ['photo','council'])await store.addProfessionalDocument(admin.user_id,user.user_id,{id:randomUUID(),kind,object_path:'fake/'+randomUUID(),mime:'image/png',size:20,original_name:'fake'});user=await store.professional(admin.user_id,user.user_id);return store.saveProfessional(admin.user_id,user.user_id,{...p,status:'verified',checked:true,version:user.version})};
  return {get store(){return store},transport,env,dir,admin,sec,guardian,teacher,otherTeacher,group,other,pupils,dates,lesson,mail,login,request,care,data,reopen(){store.close();store=createSqliteStore(env,{transport})}};
 }
+for(const status of ['inactive','pending'])test('Lista histórica: cadastro '+status+' continua visível e pode concluir a chamada sem reativar matrícula',async t=>{
+ const f=await fixture(t),day=localDay(),clock=new Date(day+'T23:00:00-03:00');
+ const c=await f.store.createClass(f.admin.user_id,{group_id:f.group.id,day});
+ await f.store.markAttendance(f.teacher.user_id,c.id,[{id:f.pupils[1].id,status:'present',version:0}]);
+ await f.store.update(f.admin.user_id,{...f.pupils[0],version:1,status});
+ const issue=()=>f.store.rollcallIssues(f.admin.user_id,{},clock).then(xs=>xs.find(x=>x.class_id===c.id));
+ const before=await issue(),list=await f.store.attendance(f.teacher.user_id,c.id);
+ assert.equal(before.expected,2);assert.equal(before.marked,1);assert.equal(list.students.length,before.expected);
+ assert.equal(list.students.find(s=>s.id===f.pupils[0].id).status,'unmarked');
+ assert.equal(list.students.find(s=>s.id===f.pupils[0].id).enrollment_status,status);
+ const change=[{id:f.pupils[0].id,status:'absent',version:0}];
+ for(const actor of [f.sec.user_id,f.otherTeacher.user_id,f.guardian.user_id])await assert.rejects(f.store.markAttendance(actor,c.id,change),{status:403});
+ await f.store.markAttendance(f.teacher.user_id,c.id,change);
+ assert.equal((await issue()).status,'resolved');assert.equal((await issue()).marked,2);
+ assert.equal((await f.store.student(f.pupils[0].id)).status,status);
+ assert.equal((await f.store.attendanceHistory(f.admin.user_id,c.id)).changes[0].actor,f.teacher.user_id);
+ await assert.rejects(f.store.markAttendance(f.teacher.user_id,c.id,change),{status:409});
+ const unchanged=await f.store.attendance(f.teacher.user_id,c.id);await f.store.markAttendance(f.teacher.user_id,c.id,[{...change[0],version:1}]);
+ assert.deepEqual((await f.store.attendance(f.teacher.user_id,c.id)).students,unchanged.students);
+ f.reopen();assert.equal((await issue()).status,'resolved');assert.equal((await f.store.attendance(f.teacher.user_id,c.id)).students.length,2);
+});
+
+test('Lista histórica: aluno aprovado depois de abrir a aula não entra retroativamente nem recebe marcação',async t=>{
+ const f=await fixture(t),day=localDay();await f.store.update(f.admin.user_id,{...f.pupils[0],version:1,status:'inactive'});
+ const c=await f.store.createClass(f.admin.user_id,{group_id:f.group.id,day});
+ await f.store.update(f.admin.user_id,{...f.pupils[0],version:2,status:'approved'});
+ const list=await f.store.attendance(f.teacher.user_id,c.id);assert.deepEqual(list.students.map(s=>s.id),[f.pupils[1].id]);
+ await assert.rejects(f.store.markAttendance(f.teacher.user_id,c.id,[{id:f.pupils[0].id,status:'present',version:0}]),{status:403});
+ await assert.rejects(f.store.markAttendance(f.teacher.user_id,c.id,[{id:f.pupils[2].id,status:'present',version:0}]),{status:403});
+});
+
+test('Início oficial: zera testes sem apagar chamadas, interrompe alertas e recomeça na data escolhida',async t=>{
+ const f=await fixture(t);for(let i=0;i<3;i++)await f.lesson(i,'absent');
+ assert.equal((await f.store.absenceAttention(f.admin.user_id)).alerts.length,1);
+ const before=(await f.store.studentProgression(f.admin.user_id,f.pupils[0].id));assert.equal(before.totals.absent,3);
+ const settings=await f.store.rollcallSettings(f.admin.user_id),day=localDay();
+ for(const actor of [f.sec.user_id,f.teacher.user_id,f.guardian.user_id])await assert.rejects(f.store.saveRollcallSettings(actor,{...settings,official_start_date:day,period_reason:'Fim dos testes'}),{status:403});
+ await assert.rejects(f.store.saveRollcallSettings(f.admin.user_id,{...settings,official_start_date:'2026-02-30',period_reason:'Fim dos testes'}),{status:400});
+ await assert.rejects(f.store.saveRollcallSettings(f.admin.user_id,{...settings,official_start_date:day,period_reason:''}),{status:400});
+ await f.store.saveRollcallSettings(f.admin.user_id,{...settings,official_start_date:day,period_reason:'Fim dos testes; início da frequência oficial'});
+ const after=await f.store.studentProgression(f.admin.user_id,f.pupils[0].id);
+ assert.equal(after.totals.absent,0);assert.equal(after.attendance.length,3);assert.ok(after.attendance.every(r=>r.testing&&r.status==='absent'));
+ assert.equal((await f.store.absenceAttention(f.admin.user_id)).alerts.length,0);
+ const report=await f.store.attendanceReport(f.admin.user_id,{from:f.dates[0],to:day});assert.equal(report.totals.absent,0);assert.equal(report.totals.classes,0);assert.equal(report.official_start_date,day);
+ assert.equal((await f.store.attendanceExport(f.admin.user_id,'amavale',f.dates[0],day)).length,0);
+ assert.equal((await f.store.classReviewQueue(f.admin.user_id)).tasks.length,0);
+ await f.store.deliverAttendanceNotices();assert.equal(f.mail.length,0);
+ const c=await f.store.createClass(f.admin.user_id,{group_id:f.group.id,day});
+ await f.store.markAttendance(f.teacher.user_id,c.id,[{id:f.pupils[0].id,status:'absent',version:0}]);
+ assert.equal((await f.store.studentProgression(f.admin.user_id,f.pupils[0].id)).totals.absent,1);
+ assert.equal((await f.store.absenceAttention(f.admin.user_id)).alerts.length,0);
+ await assert.rejects(f.store.saveRollcallSettings(f.admin.user_id,{...settings,official_start_date:'',period_reason:'Tentativa com versão antiga'}),{status:409});
+ f.reopen();assert.equal((await f.store.rollcallSettings(f.admin.user_id)).official_start_date,day);
+ const history=(await f.store.studentProgression(f.admin.user_id,f.pupils[0].id)).attendance;
+ assert.equal(history.filter(r=>r.testing).length,3);assert.equal(history.filter(r=>!r.testing).length,1);
+});
+
+test('Preferência de email: admin silenciado não recebe faltas nem chamadas; mantém acesso e os demais destinatários',async t=>{
+ const f=await fixture(t),muted=await f.store.saveStaffAccount(f.admin.user_id,null,{name:'Admin Silenciado',email:'muted@example.test',phone:'+852 6402 0000',role:'admin',active:true,email_enabled:false,version:0});
+ assert.equal(muted.email_enabled,false);assert.equal((await f.store.member(muted.user_id)).active,true);
+ const token=await f.login(muted.email);assert.ok(token);assert.equal(f.mail.at(-1).to[0],muted.email);f.mail.length=0;
+ for(let i=0;i<3;i++)await f.lesson(i,'absent');await f.store.deliverAttendanceNotices();
+ assert.ok(f.mail.length>0);assert.ok(f.mail.every(m=>!m.to.includes(muted.email)));
+ const p=await f.store.rollcallSettings(f.admin.user_id);await f.store.saveRollcallSettings(f.admin.user_id,{...p,quiet_start:0,quiet_end:0,grace_minutes:0});
+ await f.store.deliverRollcallNotices(new Date(localDay()+'T23:00:00-03:00'));
+ assert.ok(f.mail.every(m=>!m.to.includes(muted.email)));assert.ok(f.mail.some(m=>m.to.includes(f.admin.email)));
+ await assert.rejects(f.store.saveStaffAccount(f.sec.user_id,muted.user_id,{...muted,email_enabled:true}),{status:403});
+ const edited=await f.store.saveStaffAccount(f.admin.user_id,muted.user_id,{...muted,name:'Admin ainda silenciado',email_enabled:undefined});assert.equal(edited.email_enabled,false);
+ f.reopen();assert.equal((await f.store.staffAccounts(f.admin.user_id)).find(a=>a.user_id===muted.user_id).email_enabled,false);
+});
+
 test('Sequências: justificativa e desconhecido interrompem; cancelamento não vira falta',()=>{
  const rows=(statuses)=>statuses.map((status,i)=>({status,day:String(i),class_id:String(i)}));assert.equal(absenceEpisodes(rows(['absent','absent'])).length,0);assert.equal(absenceEpisodes(rows(['absent','absent','absent','absent']))[0].rows.length,4);
  for(const middle of ['present','justified','unmarked'])assert.equal(absenceEpisodes(rows(['absent','absent',middle,'absent'])).length,0);

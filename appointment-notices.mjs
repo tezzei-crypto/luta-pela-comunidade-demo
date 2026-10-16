@@ -1,7 +1,7 @@
 import {randomUUID} from 'node:crypto';
 
 // The reservation is committed before this outbox runs. A mail outage cannot undo a booking.
-export function appointmentNotices({db,get,all,run,tx,audit,env,transport,professionalApproved}){
+export function appointmentNotices({db,get,all,run,tx,audit,env,transport,professionalApproved,emailAllowedAddress=()=>true}){
  db.exec(`CREATE TABLE IF NOT EXISTS agenda_notice_attempts(
   kind TEXT NOT NULL,notice_id TEXT NOT NULL,token TEXT NOT NULL DEFAULT '',lease_until INTEGER NOT NULL DEFAULT 0,
   first_attempt INTEGER NOT NULL,next_attempt INTEGER NOT NULL DEFAULT 0,attempts INTEGER NOT NULL DEFAULT 0,
@@ -34,7 +34,7 @@ export function appointmentNotices({db,get,all,run,tx,audit,env,transport,profes
   if(old&&(clock-old.first_attempt>=23*3600000||old.attempts>=8)){review('Envio sem confirmação dentro do prazo seguro de repetição.');return}
   if(!env.RESEND_API_KEY||!env.MAIL_FROM)return;
   const email=b?(professionalApproved(b.professional_id)?b.email:null):(r.service==='psychologist'?env.PSYCHOLOGIST_EMAIL:env.SOCIAL_WORKER_EMAIL);
-  const to=[...new Set([...(kind==='request'?[env.AGENDA_EMAIL||'agenda@lutapelacomunidade.com.br']:[]),env.BOOTSTRAP_ADMIN_EMAIL,email].filter(validEmail))];
+  const to=[...new Set([...(kind==='request'?[env.AGENDA_EMAIL||'agenda@lutapelacomunidade.com.br']:[]),env.BOOTSTRAP_ADMIN_EMAIL,email].filter(validEmail).filter(emailAllowedAddress))];
   if(!to.length)return;
   if(old&&JSON.parse(old.payload).to.some(email=>!to.includes(email))){review('Destinatário alterado; conferir entrega anterior antes de reenviar.');return}
   const payload=old?.payload||JSON.stringify({from:env.MAIL_FROM,to,

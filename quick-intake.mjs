@@ -14,13 +14,13 @@ function fields(p){
  if(phone&&!/^\+?\d{10,15}$/.test(phone))fail('Confira o telefone com DDD ou deixe em branco.');
  return {name,guardian_name,phone,age};
 }
-export function quickIntake({db,get,all,run,tx,requireRole,scope,audit,project,requireUnit,env,transport}){
+export function quickIntake({db,get,all,run,tx,requireRole,scope,audit,project,requireUnit,env,transport,emailAllowed=()=>true}){
  db.exec(`CREATE TABLE IF NOT EXISTS quick_intakes(id TEXT PRIMARY KEY,request_hash TEXT NOT NULL,unit TEXT NOT NULL,group_id TEXT NOT NULL REFERENCES class_groups(id),name TEXT NOT NULL,name_key TEXT NOT NULL,age INTEGER,guardian_name TEXT NOT NULL DEFAULT '',phone TEXT NOT NULL DEFAULT '',status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','linked','archived')),student_id TEXT REFERENCES students(id),created_by TEXT NOT NULL REFERENCES members(user_id),created_at TEXT NOT NULL,updated_at TEXT NOT NULL,version INTEGER NOT NULL DEFAULT 1);
  CREATE INDEX IF NOT EXISTS quick_intakes_unit ON quick_intakes(unit,status);
  CREATE TABLE IF NOT EXISTS visitor_attendance(class_id TEXT NOT NULL REFERENCES classes(id),intake_id TEXT NOT NULL REFERENCES quick_intakes(id),present INTEGER NOT NULL CHECK(present IN (0,1)),version INTEGER NOT NULL,updated_by TEXT NOT NULL REFERENCES members(user_id),updated_at TEXT NOT NULL,PRIMARY KEY(class_id,intake_id));
  CREATE TABLE IF NOT EXISTS visitor_changes(id INTEGER PRIMARY KEY AUTOINCREMENT,class_id TEXT NOT NULL,intake_id TEXT NOT NULL,present INTEGER NOT NULL,actor TEXT NOT NULL,created_at TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS class_delivery(class_id TEXT PRIMARY KEY REFERENCES classes(id),held INTEGER NOT NULL CHECK(held IN (0,1)),version INTEGER NOT NULL,updated_by TEXT NOT NULL REFERENCES members(user_id),updated_at TEXT NOT NULL);`);
- const workflow=intakeWorkflow({db,get,all,run,tx,requireRole,scope,audit,env,transport});
+ const workflow=intakeWorkflow({db,get,all,run,tx,requireRole,scope,audit,env,transport,emailAllowed});
  function lesson(actor,id,write=false){const c=get('SELECT * FROM classes WHERE id=?',id);if(!c)fail('Aula não localizada.',404);project.lessonAccess(actor,c);if(write){project.requireAttendanceWrite(actor,c);if(c.cancelled)fail('Aula cancelada. Reabra a aula antes de lançar presença.',409);if(c.day>localDay())fail('A presença só pode ser registrada na data da aula ou depois.');}return c;}
  function read(actor,id){const r=get('SELECT * FROM quick_intakes WHERE id=?',id);if(!r)fail('Pré-cadastro não localizado.',404);requireRole(actor,['admin','secretary','teacher']);requireUnit(actor,r.unit);if(requireRole(actor,['admin','secretary','teacher']).role==='teacher')project.groupRead(actor,r.group_id);return r;}
  function mark(actor,c,r,present,version){
