@@ -1,3 +1,4 @@
+import {deferRejectedEmail} from './resend-quota.mjs';
 import {createHash,randomUUID} from 'node:crypto';
 
 // Persistent outbox: retries reuse the exact payload and provider idempotency key.
@@ -47,6 +48,7 @@ export function backupNotifications({db,get,all,run,env,transport,status,emailAl
     run('UPDATE recovery_mail_outbox SET attempts=attempts+1,first_attempt_at=COALESCE(first_attempt_at,?),last_attempt_at=? WHERE id=?',stamp,stamp,item.id);
     try{
      const response=await transport('https://api.resend.com/emails',{method:'POST',headers:{Authorization:'Bearer '+env.RESEND_API_KEY,'Content-Type':'application/json','Idempotency-Key':'backup-'+item.id},body:item.payload,signal:AbortSignal.timeout(10000)});
+     if(await deferRejectedEmail(response,{run,table:'recovery_mail_outbox',before:item,now:+now}))continue;
      const result=await response.json().catch(()=>({}));
      if(response.ok&&typeof result.id==='string'&&result.id){run("UPDATE recovery_mail_outbox SET state='accepted',accepted_at=?,provider_id=?,error=NULL WHERE id=?",stamp,result.id,item.id);continue;}
      if(response.status>=400&&response.status<500&&response.status!==429&&!(response.status===409&&result.name==='concurrent_idempotent_requests')){run("UPDATE recovery_mail_outbox SET state='failed',error='Envio rejeitado pelo provedor; confira a configuração de email.' WHERE id=?",item.id);continue;}

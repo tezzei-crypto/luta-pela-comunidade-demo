@@ -1,3 +1,4 @@
+import {deferRejectedEmail} from './resend-quota.mjs';
 import {createHash,randomUUID} from 'node:crypto';
 import {registrationReadiness} from './registration-readiness.mjs';
 
@@ -66,7 +67,7 @@ export function registrationDocumentNotices({db,get,all,run,tx,requireRole,scope
    });
    if(!job)continue;
    let code=0,provider='';
-   try{const res=await transport('https://api.resend.com/emails',{method:'POST',headers:{Authorization:'Bearer '+env.RESEND_API_KEY,'Content-Type':'application/json','Idempotency-Key':'registration-documents-'+job.id},body:job.payload,signal:AbortSignal.timeout(15000)});code=res.status;if(res.ok){const data=await res.json();if(typeof data.id==='string'&&data.id)provider=data.id;}}catch{/* No private content or provider body in logs. */}
+   try{const res=await transport('https://api.resend.com/emails',{method:'POST',headers:{Authorization:'Bearer '+env.RESEND_API_KEY,'Content-Type':'application/json','Idempotency-Key':'registration-documents-'+job.id},body:job.payload,signal:AbortSignal.timeout(15000)});if(await deferRejectedEmail(res,{run,table:'registration_document_outbox',before:{...job,attempts:job.attempts-1},now:clock(),claim:job.claim}))continue;code=res.status;if(res.ok){const data=await res.json();if(typeof data.id==='string'&&data.id)provider=data.id;}}catch{/* No private content or provider body in logs. */}
    const accepted=!!provider,permanent=code>=400&&code<500&&![408,409,429].includes(code),state=accepted?'accepted':permanent?'failed':job.attempts>=8?'needs_attention':'pending';
    run('UPDATE registration_document_outbox SET state=?,provider_id=?,accepted_at=?,last_status=?,next_attempt=?,lease_until=0 WHERE id=? AND claim=?',state,provider,accepted?new Date(clock()).toISOString():'',code,accepted?0:clock()+Math.min(3600000,300000*2**(job.attempts-1)),job.id,job.claim);
    result[accepted?'accepted':'failed']++;
@@ -75,7 +76,7 @@ export function registrationDocumentNotices({db,get,all,run,tx,requireRole,scope
  }
  async function status(actor){
   const m=requireRole(actor,['admin','secretary']),visible=recipients().filter(s=>m.role==='admin'||s.user_id===actor);
-  return {configured:configured(),sender:DOCUMENT_NOTICE_FROM,daily_hour:8,timezone:zone,check_minutes:5,recipients:visible.map(s=>({email:s.email,units:s.units,pending_count:pending(s.units).length,latest:get('SELECT day,state,attempts,accepted_at,last_status,next_attempt FROM registration_document_outbox WHERE recipient_id=? ORDER BY day DESC LIMIT 1',s.user_id)||null}))};
+  return {provider:transport.mailStatus?.()||{paused:false},configured:configured(),sender:DOCUMENT_NOTICE_FROM,daily_hour:8,timezone:zone,check_minutes:5,recipients:visible.map(s=>({email:s.email,units:s.units,pending_count:pending(s.units).length,latest:get('SELECT day,state,attempts,accepted_at,last_status,next_attempt FROM registration_document_outbox WHERE recipient_id=? ORDER BY day DESC LIMIT 1',s.user_id)||null}))};
  }
  return {deliverRegistrationDocumentNotices:deliver,registrationDocumentNotificationStatus:status};
 }

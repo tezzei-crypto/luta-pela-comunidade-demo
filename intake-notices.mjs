@@ -1,3 +1,4 @@
+import {deferRejectedEmail} from './resend-quota.mjs';
 import {createHash,randomUUID} from 'node:crypto';
 const digest=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const labels={amavale:'Amavale',valparaiso:'Valparaíso','vale-do-carangola':'Vale do Carangola'};
@@ -15,8 +16,9 @@ export function intakeNotices({db,get,all,run,tx,requireRole,scope,env={},transp
  let delivering=false;
  async function deliver(){if(delivering||!configured())return;delivering=true;try{
   const now=clock(),stamp=now.toISOString(),day=brDay(now),hour=Number(new Intl.DateTimeFormat('en-GB',{timeZone:'America/Sao_Paulo',hour:'2-digit',hourCycle:'h23'}).format(now));
+  run("UPDATE intake_notification_outbox SET state='cancelled',lease_until=0 WHERE kind='daily' AND first_attempt_at IS NULL AND day<>? AND state IN ('pending','sending') AND lease_until<=?",day,+now);
   for(const s of recipients())for(const kind of ['new','daily']){
-   if(kind==='daily'&&(hour<8||get("SELECT 1 FROM intake_notification_outbox WHERE recipient_id=? AND day=? AND kind='new'",s.user_id,day)))continue;
+   if(kind==='daily'&&(hour<8||get("SELECT 1 FROM intake_notification_outbox WHERE recipient_id=? AND kind='new' AND (day=? OR state IN ('pending','sending'))",s.user_id,day)))continue;
    tx(()=>{let rows=pending(s.units);if(kind==='new')rows=rows.filter(q=>!get('SELECT 1 FROM intake_notification_items WHERE intake_id=? AND recipient_id=?',q.id,s.user_id));if(!rows.length)return;
     const ids=rows.map(q=>q.id),id=digest([kind,s.user_id,kind==='daily'?day:ids]);run('INSERT OR IGNORE INTO intake_notification_outbox(id,recipient_id,email,kind,day,intake_ids,payload) VALUES(?,?,?,?,?,?,?)',id,s.user_id,s.email,kind,day,JSON.stringify(ids),payload(s,rows,kind));if(kind==='new')for(const q of rows)run('INSERT OR IGNORE INTO intake_notification_items VALUES(?,?,?)',q.id,s.user_id,id);
    });
@@ -30,12 +32,12 @@ export function intakeNotices({db,get,all,run,tx,requireRole,scope,env={},transp
    const body=n.first_attempt_at?n.payload:payload(s,rows.filter(q=>q.status==='pending'),n.kind),claim=randomUUID();run("UPDATE intake_notification_outbox SET state='sending',payload=?,attempts=attempts+1,first_attempt_at=COALESCE(first_attempt_at,?),claim_token=?,lease_until=? WHERE id=?",body,stamp,claim,+now+120000,n.id);return {...n,payload:body,claim};
   });if(!claimed)continue;
    let state='pending',provider=null,error='Sem confirmação; nova tentativa programada.';
-   try{const res=await transport('https://api.resend.com/emails',{method:'POST',headers:{Authorization:'Bearer '+env.RESEND_API_KEY,'Content-Type':'application/json','Idempotency-Key':'intake-notice-'+claimed.id},body:claimed.payload,signal:AbortSignal.timeout(10000)}),p=await res.json().catch(()=>({}));if(res.ok&&typeof p.id==='string'&&p.id){state='accepted';provider=p.id;error=null;}else if(res.status>=400&&res.status<500&&res.status!==429&&!(res.status===409&&p.name==='concurrent_idempotent_requests')){state='failed';error='Provedor recusou o envio.';}}catch{}
+   try{const res=await transport('https://api.resend.com/emails',{method:'POST',headers:{Authorization:'Bearer '+env.RESEND_API_KEY,'Content-Type':'application/json','Idempotency-Key':'intake-notice-'+claimed.id},body:claimed.payload,signal:AbortSignal.timeout(10000)});if(await deferRejectedEmail(res,{run,table:'intake_notification_outbox',before:claimed,now:+now,claim:claimed.claim}))continue;const p=await res.json().catch(()=>({}));if(res.ok&&typeof p.id==='string'&&p.id){state='accepted';provider=p.id;error=null;}else if(res.status>=400&&res.status<500&&res.status!==429&&!(res.status===409&&p.name==='concurrent_idempotent_requests')){state='failed';error='Provedor recusou o envio.';}}catch{}
    run("UPDATE intake_notification_outbox SET state=?,provider_id=?,accepted_at=?,error=?,next_attempt_at=?,claim_token='',lease_until=0 WHERE id=? AND state='sending' AND claim_token=?",state,provider,state==='accepted'?stamp:null,error,new Date(+now+Math.min(60,5*2**Math.min(claimed.attempts,4))*60000).toISOString(),claimed.id,claimed.claim);
   }
  }finally{delivering=false;}}
  return {
-  async intakeNotificationStatus(actor,unit){const m=requireRole(actor,['admin','secretary']);scope.requireUnit(actor,unit);const notices=all('SELECT state,recipient_id,intake_ids,email,accepted_at FROM intake_notification_outbox').filter(n=>(m.role==='admin'||n.recipient_id===actor)&&JSON.parse(n.intake_ids).some(id=>get('SELECT unit FROM quick_intakes WHERE id=?',id)?.unit===unit));return {configured:configured(),recipients:recipients().filter(s=>s.units.includes(unit)).map(s=>s.email),check_minutes:5,daily_hour:8,pending_intakes:pending([unit]).length,states:notices.reduce((a,n)=>(a[n.state]=(a[n.state]||0)+1,a),{}),last_accepted:notices.filter(n=>n.state==='accepted').sort((a,b)=>b.accepted_at.localeCompare(a.accepted_at)).map(n=>({email:n.email,accepted_at:n.accepted_at}))[0]||null};},
+  async intakeNotificationStatus(actor,unit){const m=requireRole(actor,['admin','secretary']);scope.requireUnit(actor,unit);const notices=all('SELECT state,recipient_id,intake_ids,email,accepted_at FROM intake_notification_outbox').filter(n=>(m.role==='admin'||n.recipient_id===actor)&&JSON.parse(n.intake_ids).some(id=>get('SELECT unit FROM quick_intakes WHERE id=?',id)?.unit===unit));return {provider:transport.mailStatus?.()||{paused:false},configured:configured(),recipients:recipients().filter(s=>s.units.includes(unit)).map(s=>s.email),check_minutes:5,daily_hour:8,pending_intakes:pending([unit]).length,states:notices.reduce((a,n)=>(a[n.state]=(a[n.state]||0)+1,a),{}),last_accepted:notices.filter(n=>n.state==='accepted').sort((a,b)=>b.accepted_at.localeCompare(a.accepted_at)).map(n=>({email:n.email,accepted_at:n.accepted_at}))[0]||null};},
   deliverIntakeNotices:deliver
  };
 }

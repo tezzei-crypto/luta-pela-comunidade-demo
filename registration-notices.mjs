@@ -1,3 +1,4 @@
+import {deferRejectedEmail} from './resend-quota.mjs';
 import {randomUUID} from 'node:crypto';
 
 export const REGISTRATION_RECIPIENTS=['participante@lutapelacomunidade.com.br','tezzei@gmail.com'];
@@ -46,6 +47,7 @@ export function registrationNotices({db,get,all,run,tx,env,transport=fetch,email
    let code=0,providerId='';
    try{
     const response=await send('https://api.resend.com/emails',{method:'POST',headers:{Authorization:`Bearer ${env.RESEND_API_KEY}`,'Content-Type':'application/json','Idempotency-Key':'registration-private-v2-'+job.registration_id},body:job.payload,signal:AbortSignal.timeout(15000)});
+    if(await deferRejectedEmail(response,{run,table:'registration_notification_outbox',before:{...job,attempts:job.attempts-1},now:clock(),claim:job.claim}))continue;
     code=response.status;
     if(response.ok){const data=await response.json();if(typeof data.id==='string'&&data.id)providerId=data.id;}
    }catch{/* Record only status, never provider bodies or private request content. */}

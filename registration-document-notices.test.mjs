@@ -77,3 +77,13 @@ test('Documentos: API de situação exige autenticação e limita a secretaria �
 test('Documentos: sem serviço configurado não cria fila nem afirma envio bem-sucedido',async t=>{
  const f=await fixture(t);await f.create();delete f.env.RESEND_API_KEY;await f.notices.deliverRegistrationDocumentNotices();assert.equal(f.calls.length,0);assert.equal(f.all('SELECT * FROM registration_document_outbox').length,0);assert.equal((await f.notices.registrationDocumentNotificationStatus(f.admin.user_id)).configured,false);
 });
+
+
+test('Documentos: cota não esgota tentativas; resumo vencido é substituído e segue apenas para as duas secretarias autorizadas',async t=>{
+ const f=await fixture(t);await f.create();f.setSend(async()=>Response.json({name:'daily_quota_exceeded'},{status:429}));await f.notices.deliverRegistrationDocumentNotices();
+ assert.equal(f.calls.length,2);assert.ok(f.all('SELECT * FROM registration_document_outbox').every(n=>n.state==='pending'&&n.attempts===0&&n.first_attempt===null&&n.last_status===429));
+ f.advance(300000);await f.make().deliverRegistrationDocumentNotices();assert.equal(f.calls.length,2);
+ f.setTime('2026-10-16T11:00:00Z');f.setSend(async()=>Response.json({id:'accepted-after-quota'}));await f.make().deliverRegistrationDocumentNotices();assert.equal(f.calls.length,4);
+ assert.equal(f.all("SELECT * FROM registration_document_outbox WHERE state='cancelled'").length,2);assert.equal(f.all("SELECT * FROM registration_document_outbox WHERE state='accepted'").length,2);
+ assert.deepEqual(new Set(f.calls.slice(2).map(c=>c.body.to[0])),new Set(['local@example.test','general@example.test']));await f.make().deliverRegistrationDocumentNotices();assert.equal(f.calls.length,4);
+});

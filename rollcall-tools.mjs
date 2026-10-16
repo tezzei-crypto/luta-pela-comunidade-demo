@@ -1,3 +1,4 @@
+import {deferRejectedEmail} from './resend-quota.mjs';
 import {randomUUID} from 'node:crypto';
 import {fail} from './portal-domain.mjs';
 import {localDay} from './professional-tools.mjs';
@@ -103,6 +104,7 @@ export function rollcallTools({db,get,all,run,tx,requireRole,scope,audit,env,tra
      const key='rollcall-'+n.issue_id+'-'+m.user_id+(n.send_count?'-'+(n.send_count+1):'');
      try{
       const response=await transport('https://api.resend.com/emails',{method:'POST',headers:{Authorization:'Bearer '+env.RESEND_API_KEY,'Content-Type':'application/json','Idempotency-Key':key},body:payload,signal:AbortSignal.timeout(10000)});
+      if(await deferRejectedEmail(response,{run,table:'rollcall_notices',before:n,now,claim:token}))continue;
       if(response.ok)provider=(await response.json()).id||'';
       else error='Provedor recusou o envio (HTTP '+response.status+'); nova tentativa automática.';
      }catch{}

@@ -1,3 +1,4 @@
+import {quotaAwareTransport} from './resend-quota.mjs';
 import {projectPeriod} from './project-period.mjs';
 import {backupTools} from './backup-tools.mjs';
 import {registrationReadiness} from './registration-readiness.mjs';
@@ -58,6 +59,7 @@ export function createSqliteStore(env,{transport=fetch}={}){
  fs.mkdirSync(root,{recursive:true,mode:0o700});const objects=path.join(root,'objects');fs.mkdirSync(objects,{recursive:true,mode:0o700});
  const db=new DatabaseSync(path.join(root,'portal.sqlite'));db.exec(schema);migrateMembers(db);db.function('br_day',{deterministic:true},dayOf);
  const get=(sql,...params)=>db.prepare(sql).get(...params),all=(sql,...params)=>db.prepare(sql).all(...params),run=(sql,...params)=>db.prepare(sql).run(...params);
+ transport=quotaAwareTransport({db,get,run,transport,key:env.RESEND_API_KEY||''});
  function tx(fn){db.exec('BEGIN IMMEDIATE');try{const r=fn();db.exec('COMMIT');return r}catch(e){db.exec('ROLLBACK');throw e}}
  // Upgrade only live one-hour sessions once. Expired and revoked sessions stay invalid.
  db.exec('CREATE TABLE IF NOT EXISTS auth_migrations(name TEXT PRIMARY KEY)');
