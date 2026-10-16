@@ -44,3 +44,13 @@ test('Emails: revogação, encerramento, falha permanente, limite de 23h e confi
  const f=await fixture(t),p=await f.create(),calls=[];let now=new Date(localDay()+'T11:00:00Z'),mode='timeout';const svc=f.notices({clock:()=>now,transport:async(_,o)=>{calls.push(o);if(mode==='timeout')throw Error('private');return Response.json({name:'validation_error'},{status:422})}});await svc.deliverIntakeNotices();f.db.prepare('DELETE FROM administrative_units WHERE user_id=?').run(f.sec);now=new Date(+now+300000);mode='permanent';await svc.deliverIntakeNotices();assert.equal(calls.length,3);assert.equal(f.db.prepare("SELECT COUNT(*) n FROM intake_notification_outbox WHERE state='cancelled'").get().n,1);assert.equal(f.db.prepare("SELECT COUNT(*) n FROM intake_notification_outbox WHERE state='failed'").get().n,1);await svc.deliverIntakeNotices();assert.equal(calls.length,3);
  now=new Date(+now+86400000);mode='timeout';await svc.deliverIntakeNotices();now=new Date(+now+23*3600000);await svc.deliverIntakeNotices();assert.equal(f.db.prepare("SELECT COUNT(*) n FROM intake_notification_outbox WHERE state='uncertain'").get().n,1);assert.equal(calls.length,4);await f.store.intakeFollowup(f.general,p.id,await f.follow(p,{close:true}));now=new Date(+now+86400000);await svc.deliverIntakeNotices();assert.equal(calls.length,4);await f.notices({configured:false,clock:()=>now,transport:async()=>{throw Error('must not send')}}).deliverIntakeNotices();
 });
+
+
+test('Visitantes: limite diário preserva contato e matrícula para as duas secretarias e retoma sem repetição',async t=>{
+ const f=await fixture(t);await f.create();let now=new Date(localDay()+'T12:00:00Z'),limited=true;const calls=[];
+ const deps={clock:()=>now,transport:async(_,o)=>{calls.push(o);return limited?Response.json({name:'daily_quota_exceeded'},{status:429}):Response.json({id:'accepted'});}};
+ await f.notices(deps).deliverIntakeNotices();assert.equal(calls.length,2);assert.ok(f.db.prepare('SELECT * FROM intake_notification_outbox').all().every(n=>n.first_attempt_at===null&&n.attempts===0&&n.state==='pending'));
+ now=new Date(+now+300000);await f.notices(deps).deliverIntakeNotices();assert.equal(calls.length,2);
+ limited=false;now=new Date(new Date(now).setUTCHours(24,0,6,0));await f.notices(deps).deliverIntakeNotices();assert.equal(calls.length,4);await f.notices(deps).deliverIntakeNotices();assert.equal(calls.length,4);assert.equal(calls[0].headers['Idempotency-Key'],calls[2].headers['Idempotency-Key']);
+ assert.equal((await f.store.intakeQueue(f.sec,'amavale')).intakes.length,1);assert.equal(f.db.prepare('SELECT present FROM visitor_attendance').get().present,1);
+});

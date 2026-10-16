@@ -1,3 +1,4 @@
+import {retryAfterQuota,QUOTA_MESSAGE} from './resend-quota.mjs';
 import {randomUUID} from 'node:crypto';
 
 // The reservation is committed before this outbox runs. A mail outage cannot undo a booking.
@@ -31,7 +32,7 @@ export function appointmentNotices({db,get,all,run,tx,audit,env,transport,profes
   };
   // Legacy ambiguous attempts lack a stable payload/first-attempt timestamp. Do not resend blindly.
   if(!old&&r.notice_state!=='pending'){review('Tentativa antiga requer conferência no provedor.');return}
-  if(old&&(clock-old.first_attempt>=23*3600000||old.attempts>=8)){review('Envio sem confirmação dentro do prazo seguro de repetição.');return}
+  if(old&&(old.first_attempt&&clock-old.first_attempt>=23*3600000||old.attempts>=8)){review('Envio sem confirmação dentro do prazo seguro de repetição.');return}
   if(!env.RESEND_API_KEY||!env.MAIL_FROM)return;
   const email=b?(professionalApproved(b.professional_id)?b.email:null):(r.service==='psychologist'?env.PSYCHOLOGIST_EMAIL:env.SOCIAL_WORKER_EMAIL);
   const to=[...new Set([...(kind==='request'?[env.AGENDA_EMAIL||'agenda@lutapelacomunidade.com.br']:[]),env.BOOTSTRAP_ADMIN_EMAIL,email].filter(validEmail).filter(emailAllowedAddress))];
@@ -42,14 +43,15 @@ export function appointmentNotices({db,get,all,run,tx,audit,env,transport,profes
    text:'Uma solicitação foi registrada no sistema.\nProtocolo: '+id+'\nConsulte a Agenda no painel protegido para verificar a vaga e confirmar com a família. O recebimento deste aviso não confirma o atendimento.\n'+(env.PUBLIC_ORIGIN||env.RENDER_EXTERNAL_URL||'')+'/portal/#schedule-area'});
   const token=randomUUID();
   if(!old)run('INSERT INTO agenda_notice_attempts(kind,notice_id,first_attempt,payload) VALUES(?,?,?,?)',kind,id,clock,payload);
-  run('UPDATE agenda_notice_attempts SET token=?,lease_until=?,attempts=attempts+1 WHERE kind=? AND notice_id=?',token,clock+120000,kind,id);
+  run('UPDATE agenda_notice_attempts SET token=?,lease_until=?,attempts=attempts+1,first_attempt=CASE WHEN first_attempt=0 THEN ? ELSE first_attempt END WHERE kind=? AND notice_id=?',token,clock+120000,clock,kind,id);
   run("UPDATE "+table+" SET notice_state='sending' WHERE id=?",id);
-  return {token,payload,attempts:(old?.attempts||0)+1};
+  return {token,payload,first_attempt:old?.first_attempt||0,attempts:(old?.attempts||0)+1};
  })}
  async function send(kind,id){
   const n=claim(kind,id);if(!n)return;let sent=false,error='Não foi possível confirmar o envio; nova tentativa automática.';
   try{const response=await transport('https://api.resend.com/emails',{method:'POST',headers:{Authorization:'Bearer '+env.RESEND_API_KEY,
    'Content-Type':'application/json','Idempotency-Key':(kind==='request'?'appointment-record-':'booking-')+id},body:n.payload,signal:AbortSignal.timeout(15000)});
+   const until=await retryAfterQuota(response);if(until){tx(()=>{if(get('SELECT token FROM agenda_notice_attempts WHERE kind=? AND notice_id=?',kind,id)?.token!==n.token)return;run("UPDATE agenda_notice_attempts SET token='',lease_until=0,attempts=?,first_attempt=?,next_attempt=?,last_error=? WHERE kind=? AND notice_id=?",n.attempts-1,n.first_attempt,until,QUOTA_MESSAGE,kind,id);run("UPDATE "+tableFor(kind)+" SET notice_state='pending' WHERE id=?",id);});return;}
    sent=response.ok&&!!(await response.json()).id;if(!response.ok)error='Provedor recusou o aviso (HTTP '+response.status+').';
   }catch{}
   tx(()=>{const current=get('SELECT token FROM agenda_notice_attempts WHERE kind=? AND notice_id=?',kind,id);if(current?.token!==n.token)return;

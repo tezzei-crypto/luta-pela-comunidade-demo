@@ -1,3 +1,5 @@
+import {attendanceMail} from './attendance-mail.mjs';
+import {deferRejectedEmail} from './resend-quota.mjs';
 import {absencePolicy} from './absence-policy.mjs';
 import {randomUUID} from 'node:crypto';
 import {fail} from './portal-domain.mjs';
@@ -100,6 +102,7 @@ export function attendanceInsights({db,get,all,run,tx,requireRole,scope,audit,en
   const totals=result.reduce((a,r)=>{for(const k of ['present','absent','justified','unmarked','marked','total'])a[k]+=r[k];return a},{present:0,absent:0,justified:0,unmarked:0,marked:0,total:0});
   return {official_start_date:officialStart(),absence_threshold:policy.readAbsencePolicy().threshold,generated_at:stamp(),from,to,unit:f.unit,group_id:f.group_id,summary:result,records,lessons,totals:{...totals,students:new Set(result.map(r=>r.student_id)).size,classes:lessons.filter(c=>!c.cancelled).length,frequency:totals.marked?Math.round(1000*totals.present/totals.marked)/10:null}};
  }
+ const deliverDigest=attendanceMail({db,get,all,run,tx,env,transport,recipients,emailAllowed,threshold:()=>policy.readAbsencePolicy().threshold});
  let delivering=false;
  return {
   ...policy,
@@ -127,14 +130,14 @@ export function attendanceInsights({db,get,all,run,tx,requireRole,scope,audit,en
   async attendanceRecipients(actor,p={}){const f=filters(actor,p);return f.units.map(unit=>({unit,roles:[...ROLES,'teacher'].map(role=>({role,count:recipients(unit,f.group_id).filter(r=>r.role===role&&emailAllowed(r.user_id)).length}))}))},
   async deliverAttendanceNotices(){
    if(delivering)return;delivering=true;
-   try{tx(reconcile);if(!env.RESEND_API_KEY||!env.MAIL_FROM)return;
-    const due=all("SELECT n.*,a.unit,a.signal,a.workflow FROM attendance_notices n JOIN attendance_alerts a ON a.id=n.alert_id WHERE n.status IN ('pending','retry') AND n.next_attempt<=? ORDER BY n.next_attempt LIMIT 20",Date.now());
+   try{tx(reconcile);if(!env.RESEND_API_KEY||!env.MAIL_FROM)return;await deliverDigest();
+    const due=all("SELECT n.*,a.unit,a.signal,a.workflow FROM attendance_notices n JOIN attendance_alerts a ON a.id=n.alert_id WHERE n.status IN ('pending','retry') AND n.batch_id='' AND (n.attempts>0 OR n.first_attempt>0) AND n.next_attempt<=? ORDER BY n.next_attempt LIMIT 20",Date.now());
     for(const n of due){const current=get('SELECT * FROM attendance_alerts WHERE id=?',n.alert_id),r=recipients(n.unit,current.group_id).find(r=>r.user_id===n.recipient_id);if(!r||!emailAllowed(r.user_id)||current.signal!=='active'||current.workflow==='closed'){run("UPDATE attendance_notices SET status='cancelled',updated_at=? WHERE alert_id=? AND recipient_id=?",stamp(),n.alert_id,n.recipient_id);continue}
      const now=Date.now();if(n.first_attempt&&now-n.first_attempt>=23*3600000||n.attempts>=8){run("UPDATE attendance_notices SET status='review',updated_at=? WHERE alert_id=? AND recipient_id=?",stamp(),n.alert_id,n.recipient_id);continue}
      const payload=n.payload||JSON.stringify({from:env.MAIL_FROM,to:[r.email],subject:'Frequência: acompanhamento de faltas — Luta pela Comunidade',text:'Há um alerta de '+policy.readAbsencePolicy().threshold+' ou mais faltas consecutivas sem justificativa em um núcleo sob sua responsabilidade.\nEntre no painel privado para consultar o aluno, conferir os lançamentos e combinar o contato acolhedor com a família.\n'+(env.PUBLIC_ORIGIN||env.RENDER_EXTERNAL_URL)+'/portal/#absence-attention-area\n\nA justificativa interrompe a sequência. Registros sem marcação não contam como falta. Este aviso não substitui o acompanhamento da equipe.'});
      run('UPDATE attendance_notices SET payload=? WHERE alert_id=? AND recipient_id=?',payload,n.alert_id,n.recipient_id);
      run('UPDATE attendance_notices SET attempts=attempts+1,first_attempt=CASE WHEN first_attempt=0 THEN ? ELSE first_attempt END,next_attempt=?,updated_at=? WHERE alert_id=? AND recipient_id=?',now,now+300000,stamp(),n.alert_id,n.recipient_id);
-     let provider='';try{const response=await transport('https://api.resend.com/emails',{method:'POST',headers:{Authorization:'Bearer '+env.RESEND_API_KEY,'Content-Type':'application/json','Idempotency-Key':'attendance-'+n.alert_id+'-'+r.user_id},body:payload,signal:AbortSignal.timeout(10000)});if(response.ok)provider=(await response.json()).id||''}catch{}
+     let provider='';try{const response=await transport('https://api.resend.com/emails',{method:'POST',headers:{Authorization:'Bearer '+env.RESEND_API_KEY,'Content-Type':'application/json','Idempotency-Key':'attendance-'+n.alert_id+'-'+r.user_id},body:payload,signal:AbortSignal.timeout(10000)});if(await deferRejectedEmail(response,{run,table:'attendance_notices',before:n,now}))continue;if(response.ok)provider=(await response.json()).id||''}catch{}
      run('UPDATE attendance_notices SET status=?,provider_id=?,next_attempt=?,updated_at=? WHERE alert_id=? AND recipient_id=?',provider?'accepted':'retry',provider,now+Math.min(3600000,300000*2**n.attempts),stamp(),n.alert_id,n.recipient_id);
     }
    }finally{delivering=false}

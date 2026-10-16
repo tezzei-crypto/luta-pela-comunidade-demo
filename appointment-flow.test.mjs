@@ -202,3 +202,10 @@ test('Concorrência real: oito trabalhadores disputam uma vaga e somente um conf
  let ready=0;const outcomes=workers.map(w=>new Promise((resolve,reject)=>{let status;w.on('error',reject);w.on('exit',code=>code===0&&status!==undefined?resolve(status):reject(Error('Worker did not finish cleanly')));w.on('message',m=>{if(m.ready){if(++ready===workers.length){Atomics.store(flag,0,1);Atomics.notify(flag,0)}}else status=m.status})}));
  const results=await Promise.all(outcomes);assert.equal(results.filter(s=>s===200).length,1);assert.equal(results.filter(s=>s===409).length,7);assert.equal((await f.store.bookings(f.admin.user_id)).length,1);assert.equal((await f.calendar()).events[0].status,'pending');
 });
+
+
+test('Agenda: recusa por cota não consome tentativas nem perde reserva; retoma com a mesma chave',async t=>{
+ const now=Date.now();t.mock.timers.enable({apis:['Date'],now});let limited=true;const f=await fixture(t,{transport:async()=>limited?Response.json({name:'daily_quota_exceeded'},{status:429}):Response.json({id:'accepted'})});
+ const s=await f.slot(),p=f.payload(s);await f.store.createAppointmentRequest(p);await f.store.sendAppointmentNotice(p.requestId);assert.equal(f.mail.length,1);
+ const db=new DatabaseSync(path.join(f.dir,'portal.sqlite'));try{const row=db.prepare('SELECT * FROM agenda_notice_attempts').get();assert.equal(row.attempts,0);assert.equal(row.first_attempt,0);assert.equal(db.prepare('SELECT notice_state FROM appointment_requests').get().notice_state,'pending');limited=false;t.mock.timers.setTime(row.next_attempt+1000);await f.store.deliverAppointmentNotices();assert.equal(f.mail.length,2);assert.equal(f.mail[0].key,f.mail[1].key);await f.store.deliverAppointmentNotices();assert.equal(f.mail.length,2);assert.equal((await f.store.bookings(f.admin.user_id)).length,1);}finally{db.close();}
+});

@@ -1,3 +1,4 @@
+import {deferRejectedEmail} from './resend-quota.mjs';
 import {createHash} from 'node:crypto';
 import {fail,ageAt} from './portal-domain.mjs';
 import {ADMIN_UNITS} from './unit-scope.mjs';
@@ -44,8 +45,8 @@ export function operationsTools({db,get,all,run,requireRole,scope,env,transport,
     if(!emailAllowed(item.user_id)||item.day<officialStart()||!get("SELECT 1 FROM members WHERE user_id=? AND role='admin' AND active=1 AND lower(email)=?",item.user_id,item.email)){run("UPDATE operations_outbox SET state='cancelled' WHERE id=?",item.id);continue;}
     if(item.first_attempt_at&&now-Date.parse(item.first_attempt_at)>=23*3600000){run("UPDATE operations_outbox SET state='uncertain',error='Confira o provedor antes de repetir o envio.' WHERE id=?",item.id);continue;}
     run('UPDATE operations_outbox SET attempts=attempts+1,first_attempt_at=COALESCE(first_attempt_at,?) WHERE id=?',stamp,item.id);
-    try{const res=await transport('https://api.resend.com/emails',{method:'POST',headers:{Authorization:'Bearer '+env.RESEND_API_KEY,'Content-Type':'application/json','Idempotency-Key':'operations-'+item.id},body:item.payload,signal:AbortSignal.timeout(10000)}),data=await res.json().catch(()=>({}));
-     if(res.ok&&typeof data.id==='string'&&data.id){run("UPDATE operations_outbox SET state='accepted',accepted_at=?,provider_id=?,error=NULL WHERE id=?",stamp,data.id,item.id);continue;}
+    try{const res=await transport('https://api.resend.com/emails',{method:'POST',headers:{Authorization:'Bearer '+env.RESEND_API_KEY,'Content-Type':'application/json','Idempotency-Key':'operations-'+item.id},body:item.payload,signal:AbortSignal.timeout(10000)});
+     if(await deferRejectedEmail(res,{run,table:'operations_outbox',before:item,now:+now}))continue;const data=await res.json().catch(()=>({}));if(res.ok&&typeof data.id==='string'&&data.id){run("UPDATE operations_outbox SET state='accepted',accepted_at=?,provider_id=?,error=NULL WHERE id=?",stamp,data.id,item.id);continue;}
      if(res.status>=400&&res.status<500&&res.status!==429&&!(res.status===409&&data.name==='concurrent_idempotent_requests')){run("UPDATE operations_outbox SET state='failed',error='Provedor recusou o envio. Confira a configuração.' WHERE id=?",item.id);continue;}
     }catch{}
     run("UPDATE operations_outbox SET next_attempt_at=?,error='Sem confirmação; nova tentativa programada.' WHERE id=?",new Date(+now+Math.min(60,5*2**Math.min(item.attempts,4))*60000).toISOString(),item.id);

@@ -316,3 +316,20 @@ test('Email de faltas mantém o mesmo conteúdo em nova tentativa mesmo após mu
  const policy=await f.store.absencePolicy(f.admin.user_id),preview=await f.store.previewAbsencePolicy(f.admin.user_id,{threshold:4,version:policy.version});await f.store.saveAbsencePolicy(f.admin.user_id,{threshold:4,version:policy.version,preview_token:preview.preview_token,reason:'Mudança fictícia de critério'});
  const db=new DatabaseSync(path.join(f.dir,'portal.sqlite'));db.exec('UPDATE attendance_notices SET next_attempt=0');db.close();await f.store.deliverAttendanceNotices();const after=f.mail.filter(m=>m.to[0]===f.teacher.email).at(-1);assert.equal(after.key,before.key);assert.equal(after.text,before.text);
 });
+
+
+test('Faltas: dois alunos geram um resumo por destinatário; reinício não repete nem inclui nomes',async t=>{
+ const f=await fixture(t);for(let i=0;i<3;i++){const c=await f.lesson(i,'absent');await f.store.markAttendance(f.admin.user_id,c.id,[{id:f.pupils[1].id,status:'absent',version:0}]);}
+ await f.store.deliverAttendanceNotices();assert.equal(f.mail.length,3);assert.ok(f.mail.every(m=>m.text.includes('2 novo(s) alerta(s)')&&!m.text.includes('Aluno')));
+ const db=new DatabaseSync(path.join(f.dir,'portal.sqlite'));assert.equal(db.prepare("SELECT count(*) n FROM attendance_notices WHERE status='accepted'").get().n,6);db.close();
+ f.reopen();await f.store.deliverAttendanceNotices();assert.equal(f.mail.length,3);
+});
+
+test('Faltas: cota diária preserva os três resumos, atravessa reinício e entrega sem duplicar',async t=>{
+ const base=Date.parse(localDay()+'T12:00:00Z');t.mock.timers.enable({apis:['Date'],now:base});let limited=true;
+ const f=await fixture(t,{transport:async()=>limited?Response.json({name:'daily_quota_exceeded'},{status:429}):Response.json({id:randomUUID()})});
+ for(let i=0;i<3;i++)await f.lesson(i,'absent');await f.store.deliverAttendanceNotices();assert.equal(f.mail.length,1);
+ let db=new DatabaseSync(path.join(f.dir,'portal.sqlite'));const pending=db.prepare('SELECT * FROM attendance_mail_batches').all();assert.equal(pending.length,3);assert.ok(pending.every(n=>n.state==='pending'&&n.attempts===0&&n.first_attempt===0));db.close();
+ f.reopen();await f.store.deliverAttendanceNotices();assert.equal(f.mail.length,1);limited=false;t.mock.timers.setTime(new Date(base).setUTCHours(24,0,6,0));await f.store.deliverAttendanceNotices();assert.equal(f.mail.length,4);
+ await f.store.deliverAttendanceNotices();assert.equal(f.mail.length,4);assert.equal(f.mail[0].key,f.mail[1].key);
+});
