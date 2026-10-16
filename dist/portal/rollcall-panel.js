@@ -9,6 +9,7 @@ export function startRollcallPanel({api,el,field,action,notice,active,showPanel,
  function settingsEditor(s){
   const details=el('details');details.append(el('summary','Configurar avisos de chamada'));
   const form=el('form');settingsForm=form;
+  field(form,'Início oficial da frequência','official_start_date',s.official_start_date||'',{type:'date'});field(form,'Motivo da mudança do início oficial','period_reason','');form.append(el('p','Aulas anteriores ficam no histórico como testes, fora dos totais de frequência, graduação e avisos. Alterar a data exige um motivo e fica registrado. Deixe a data vazia para considerar todo o histórico.'));
   const flags=[['enabled','Monitoramento ativo'],['teacher_email','Avisar professores vinculados por email'],['manager_email','Avisar administração e secretaria por email']];
   for(const [name,label]of flags){const box=el('label',undefined,{class:'check-label'}),input=el('input',undefined,{type:'checkbox',name});input.checked=s[name];box.append(input,document.createTextNode(label));form.append(box)}
   for(const [name,label,min,max]of [['grace_hours','Prazo após o fim da aula para avisar (horas)',0,48],['repeat_hours','Intervalo entre lembretes (horas)',1,168],['max_notices','Máximo de emails por pessoa e aula',1,5],['quiet_start','Pausar emails a partir de (hora de Brasília)',0,23],['quiet_end','Retomar emails às (hora de Brasília)',0,23]]){
@@ -16,7 +17,7 @@ export function startRollcallPanel({api,el,field,action,notice,active,showPanel,
   }
   form.append(el('p','Horas iguais desativam a pausa noturna. O limite é por destinatário e aula, incluindo avisos já enviados. Alterações valem para as pendências existentes. Nenhum lembrete transforma alunos sem marcação em faltosos.'),el('button','Salvar regras dos lembretes'));
   form.addEventListener('submit',action(async()=>{
-   const data={version:s.version};for(const [k]of flags)data[k]=form.elements[k].checked;
+   const data={version:s.version,official_start_date:form.elements.official_start_date.value,period_reason:form.elements.period_reason.value};for(const [k]of flags)data[k]=form.elements[k].checked;
    data.grace_minutes=Math.round(Number(form.elements.grace_hours.value)*60);
    for(const k of ['repeat_hours','max_notices','quiet_start','quiet_end'])data[k]=Number(form.elements[k].value);
    const saved=await api('/rollcall-settings',{method:'POST',data});notice(saved.message);settingsBaseline=snapshot(form);await refresh(true);
@@ -25,7 +26,7 @@ export function startRollcallPanel({api,el,field,action,notice,active,showPanel,
  function render(data){
   const {issues,settings:s}=data,open=issues.filter(i=>i.status==='open'&&!i.within_grace);
   const previousUnit=content.querySelector('[name=unit]')?.value||'',previousStatus=content.querySelector('[name=status]')?.value||'open';
-  content.replaceChildren();
+  content.replaceChildren();if(s.official_start_date)content.append(el('p','Início oficial: '+s.official_start_date.split('-').reverse().join('/')+'. Aulas anteriores são testes e não geram pendências de frequência.',{class:'form-success'}));
   content.append(el('p',`${open.length} com prazo vencido · ${issues.filter(i=>i.status==='open'&&i.within_grace).length} dentro do prazo`,{role:'status','aria-live':'polite'}),el('p','',{id:'rollcall-last-checked',class:'muted'}));
   content.append(el('p',s.enabled?`O painel consulta as chamadas a cada 20 segundos. Emails são verificados a cada ${s.check_interval_minutes} minutos e só podem sair ${s.grace_minutes/60} hora(s) após o término. Até ${s.max_notices} email(s) por destinatário e aula, com intervalo de ${s.repeat_hours} horas.`:'Monitoramento pausado pela administração. As pendências anteriores continuam disponíveis para conferência.',{class:s.enabled?'form-success':'form-error'}));
   if(s.quiet_start!==s.quiet_end)content.append(el('p',`Emails pausados das ${String(s.quiet_start).padStart(2,'0')}h às ${String(s.quiet_end).padStart(2,'0')}h, horário de Brasília. O painel continua disponível.`));

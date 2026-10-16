@@ -1,3 +1,4 @@
+import {projectPeriod} from './project-period.mjs';
 import {backupTools} from './backup-tools.mjs';
 import {registrationReadiness} from './registration-readiness.mjs';
 import {registrationNotices} from './registration-notices.mjs';
@@ -69,20 +70,21 @@ export function createSqliteStore(env,{transport=fetch}={}){
  const requireRole=(actor,roles)=>{const m=member(actor);if(!m||!roles.includes(m.role))fail('Acesso não permitido.',403);return m};
  const audit=(actor,action,id=null)=>run('INSERT INTO audit(actor,action,student_id,created_at) VALUES(?,?,?,?)',actor,action,id,nowIso());
  const documentRow=r=>{run('INSERT INTO documents(id,student_id,kind,object_path,original_name,mime,size,created_by,created_at) VALUES(?,?,?,?,?,?,?,?,?)',r.id,r.student_id,r.kind,r.object_path,r.original_name,r.mime,r.size,r.created_by,nowIso())};
- const registrationMail=registrationNotices({db,get,all,run,tx,env,transport});
+ const emailAllowed=id=>staff.canReceiveSystemEmail(id),emailAllowedAddress=email=>staff.canReceiveSystemEmailAddress(email);
+ let insights,rollcalls;const {officialStart,setOfficialStart}=projectPeriod({db,get,run,requireRole,audit,onChange:()=>insights?.attendanceReconcile()});
+ const registrationMail=registrationNotices({db,get,all,run,tx,env,transport,emailAllowedAddress});
  const asRegistration=r=>r?{...r,documents:JSON.parse(r.documents),notification:registrationMail.status(r.id)}:undefined;
  function objectPath(key){if(typeof key!=='string'||!key||key.split('/').some(p=>!p||p==='.'||p==='..'||!/^[a-zA-Z0-9_.-]+$/.test(p)))fail('Arquivo inválido.');const full=path.resolve(objects,...key.split('/'));if(!full.startsWith(objects+path.sep))fail('Arquivo inválido.');return full}
  const scope=unitScope({db,get,all,requireRole});
  const teaching=teacherTools({db,get,all,run,tx,requireRole,scope,audit});
  const staff=staffAccounts({db,get,all,run,tx,requireRole,scope,audit});
- let insights,rollcalls;
- const project=projectTools({db,get,all,run,tx,requireRole,scope,audit,requireUnit:teaching.requireUnit,onAttendanceChanged:()=>{insights?.attendanceReconcile();rollcalls?.rollcallReconcile()}});
+ const project=projectTools({db,get,all,run,tx,requireRole,scope,audit,officialStart,requireUnit:teaching.requireUnit,onAttendanceChanged:()=>{insights?.attendanceReconcile();rollcalls?.rollcallReconcile()}});
  const evidence=classEvidence({db,get,all,run,tx,requireRole,audit,objectPath,lessonAccess:project.lessonAccess});
  const professionals=professionalTools({db,get,all,run,tx,requireRole,scope,audit});
  const scheduling=schedulingTools({db,get,all,run,tx,requireRole,scope,audit,...professionals});
- const agendaNotices=appointmentNotices({db,get,all,run,tx,audit,env,transport,professionalApproved:professionals.professionalApproved});
- insights=attendanceInsights({db,get,all,run,tx,requireRole,scope,audit,env,transport});
- rollcalls=rollcallTools({db,get,all,run,tx,requireRole,scope,audit,env,transport,requireAttendanceWrite:project.requireAttendanceWrite,canAttendanceWrite:project.canAttendanceWrite});
+ const agendaNotices=appointmentNotices({db,get,all,run,tx,audit,env,transport,emailAllowedAddress,professionalApproved:professionals.professionalApproved});
+ insights=attendanceInsights({db,get,all,run,tx,requireRole,scope,audit,env,transport,officialStart,emailAllowed});
+ rollcalls=rollcallTools({db,get,all,run,tx,requireRole,scope,audit,env,transport,officialStart,setOfficialStart,emailAllowed,requireAttendanceWrite:project.requireAttendanceWrite,canAttendanceWrite:project.canAttendanceWrite});
  db.exec('CREATE TABLE IF NOT EXISTS student_sequences(prefix TEXT PRIMARY KEY,last_number INTEGER NOT NULL CHECK(last_number BETWEEN 0 AND 999999))');
  const initial=env.BOOTSTRAP_ADMIN_EMAIL?.trim().toLowerCase();
  if(initial&&emailValid(initial)&&!get("SELECT user_id FROM members WHERE role='admin'")){
@@ -106,7 +108,7 @@ export function createSqliteStore(env,{transport=fetch}={}){
  const api={
   ...siteEditor({db,get,all,run,tx,requireRole,scope,audit,objectPath}),
   ...diagnostics({db,get,all,run,tx,requireRole,scope,audit}),
-  ...contactSettings({db,get,run,tx,requireRole,audit}),...insights,...rollcalls,...staff,...project,...evidence,...teaching,...professionals,...scheduling,...workforceTools({db,get,all,run,tx,requireRole,scope,audit}),...studentDetails({db,get,all,run,tx,requireRole,scope,audit,onManualRegistration:(actor,p,id)=>{if(p.quick_intake_id)api.attachIntakeRegistration(actor,p.quick_intake_id,id)}}),
+  ...contactSettings({db,get,run,tx,requireRole,audit}),...insights,...rollcalls,...staff,...project,...evidence,...teaching,...professionals,...scheduling,...workforceTools({db,get,all,run,tx,requireRole,scope,audit}),...studentDetails({db,get,all,run,tx,requireRole,scope,audit,officialStart,onManualRegistration:(actor,p,id)=>{if(p.quick_intake_id)api.attachIntakeRegistration(actor,p.quick_intake_id,id)}}),
   ...agendaNotices,
   ...whatsappNotices({db,get,all,run,tx,requireRole,audit,env,transport,targets:()=>[...insights.absenceWhatsappTargets(),...rollcalls.rollcallWhatsappTargets()]}),
   async sendBookingNotice(actor,id){await scheduling.booking(actor,id);await agendaNotices.sendPrivateNotice(id)},
@@ -214,10 +216,10 @@ export function createSqliteStore(env,{transport=fetch}={}){
    return limited[name](...args);
   }});
  };
- Object.assign(api,quickIntake({db,get,all,run,tx,requireRole,scope,audit,project,requireUnit:teaching.requireUnit,env,transport}));
- Object.assign(api,registrationDocumentNotices({db,get,all,run,tx,requireRole,scope,env,transport}));
- Object.assign(api,operationsTools({db,get,all,run,requireRole,scope,env,transport}));
- Object.assign(api,classReview({db,get,all,run,tx,requireRole,scope,audit,evidence,env,transport}));
- Object.assign(api,systemSync({db,get,requireRole,secret:env.PORTAL_SECRET}),backupTools({db,get,all,run,tx,requireRole,audit,env,transport}));
+ Object.assign(api,quickIntake({db,get,all,run,tx,requireRole,scope,audit,project,emailAllowed,requireUnit:teaching.requireUnit,env,transport}));
+ Object.assign(api,registrationDocumentNotices({db,get,all,run,tx,requireRole,scope,env,transport,emailAllowed}));
+ Object.assign(api,operationsTools({db,get,all,run,requireRole,scope,env,transport,emailAllowed,officialStart}));
+ Object.assign(api,classReview({db,get,all,run,tx,requireRole,scope,audit,evidence,env,transport,emailAllowed,officialStart}));
+ Object.assign(api,systemSync({db,get,requireRole,secret:env.PORTAL_SECRET}),backupTools({db,get,all,run,tx,requireRole,audit,env,transport,emailAllowed}));
  return api;
 }

@@ -41,3 +41,13 @@ test('rotina pausada e falta de credenciais não enviam; rejeição permanente f
 test('duas execuções simultâneas não duplicam avisos',async t=>{
  const f=fixture(t);f.state.external_pending=true;let resolve;const gate=new Promise(r=>{resolve=r});f.send(async()=>{await gate;return Response.json({id:'ok'})});const first=f.notices.deliver();await f.notices.deliver();assert.equal(f.calls.length,1);resolve();await first;assert.equal(f.calls.length,2);
 });
+
+test('preferência de email interrompe retry e novos backups, preservando os demais administradores',async t=>{
+ const f=fixture(t),muted=new Set(),notices=backupNotifications({...f.dependencies,emailAllowed:id=>!muted.has(id)});
+ f.state.external_pending=true;f.send(async()=>new Response('',{status:503}));await notices.deliver();assert.equal(f.calls.length,2);
+ muted.add('admin-b');f.calls.length=0;f.send(async()=>Response.json({id:'accepted'}));f.time('2026-10-10T11:05:00Z');await notices.deliver();
+ assert.ok(f.calls.length>0);assert.ok(f.calls.every(c=>JSON.parse(c.body).to[0]==='a@example.test'));
+ assert.equal(f.db.prepare("SELECT count(*) n FROM recovery_mail_outbox WHERE user_id='admin-b' AND state='cancelled'").get().n,1);
+ assert.deepEqual(notices.notificationStatus().recipients,['a@example.test']);
+ f.time('2026-10-11T11:05:00Z');await notices.deliver();assert.ok(f.calls.every(c=>JSON.parse(c.body).to[0]==='a@example.test'));
+});

@@ -2,12 +2,12 @@ import {createHash,randomUUID} from 'node:crypto';
 const digest=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const labels={amavale:'Amavale',valparaiso:'Valparaíso','vale-do-carangola':'Vale do Carangola'};
 const brDay=now=>new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).format(now);
-export function intakeNotices({db,get,all,run,tx,requireRole,scope,env={},transport=fetch,clock=()=>new Date()}){
+export function intakeNotices({db,get,all,run,tx,requireRole,scope,env={},transport=fetch,emailAllowed=()=>true,clock=()=>new Date()}){
  db.exec(`CREATE TABLE IF NOT EXISTS intake_notification_outbox(id TEXT PRIMARY KEY,recipient_id TEXT NOT NULL REFERENCES members(user_id),email TEXT NOT NULL,kind TEXT NOT NULL,day TEXT NOT NULL,intake_ids TEXT NOT NULL,payload TEXT NOT NULL,state TEXT NOT NULL DEFAULT 'pending',attempts INTEGER NOT NULL DEFAULT 0,first_attempt_at TEXT,next_attempt_at TEXT,accepted_at TEXT,provider_id TEXT,error TEXT,claim_token TEXT NOT NULL DEFAULT '',lease_until INTEGER NOT NULL DEFAULT 0);
  CREATE TABLE IF NOT EXISTS intake_notification_items(intake_id TEXT NOT NULL REFERENCES quick_intakes(id),recipient_id TEXT NOT NULL REFERENCES members(user_id),outbox_id TEXT NOT NULL REFERENCES intake_notification_outbox(id),PRIMARY KEY(intake_id,recipient_id));
  CREATE INDEX IF NOT EXISTS intake_notification_due ON intake_notification_outbox(state,next_attempt_at);`);
  const configured=()=>!!(env.RESEND_API_KEY&&env.MAIL_FROM);
- function recipient(id){const m=get("SELECT user_id,lower(email) AS email FROM members WHERE user_id=? AND role='secretary' AND active=1",id);if(!m||! /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(m.email))return null;return {...m,units:scope.units(id)};}
+ function recipient(id){const m=get("SELECT user_id,lower(email) AS email FROM members WHERE user_id=? AND role='secretary' AND active=1",id);if(!m||!emailAllowed(id)||! /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(m.email))return null;return {...m,units:scope.units(id)};}
  const recipients=()=>all("SELECT user_id FROM members WHERE role='secretary' AND active=1 ORDER BY email").map(m=>recipient(m.user_id)).filter(m=>m?.units.length);
  const rowSelect="SELECT q.id,q.unit,q.status,g.label AS group_label,(SELECT MAX(c.day) FROM visitor_attendance va JOIN classes c ON c.id=va.class_id WHERE va.intake_id=q.id AND va.present=1 AND c.cancelled=0) AS training_day FROM quick_intakes q JOIN class_groups g ON g.id=q.group_id ";
  const pending=units=>all(rowSelect+"WHERE q.status='pending' ORDER BY q.id").filter(q=>units.includes(q.unit));

@@ -5,7 +5,7 @@ import {localDay} from './professional-tools.mjs';
 const defaults={enabled:true,teacher_email:true,manager_email:true,grace_minutes:720,repeat_hours:24,max_notices:2,quiet_start:20,quiet_end:8,version:0};
 const brParts=clock=>Object.fromEntries(new Intl.DateTimeFormat('en-US',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',hourCycle:'h23'}).formatToParts(clock).map(p=>[p.type,p.value]));
 const brDay=clock=>{const p=brParts(clock);return `${p.year}-${p.month}-${p.day}`};
-export function rollcallTools({db,get,all,run,tx,requireRole,scope,audit,env,transport,requireAttendanceWrite,canAttendanceWrite}){
+export function rollcallTools({db,get,all,run,tx,requireRole,scope,audit,env,transport,requireAttendanceWrite,canAttendanceWrite,emailAllowed=()=>true,officialStart=()=>'',setOfficialStart=()=>{}}){
  db.exec(`CREATE TABLE IF NOT EXISTS attendance_monitor_settings(key TEXT PRIMARY KEY,value TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS rollcall_issues(id TEXT PRIMARY KEY,group_id TEXT NOT NULL REFERENCES class_groups(id),day TEXT NOT NULL,unit TEXT NOT NULL,
  status TEXT NOT NULL,expected INTEGER NOT NULL,marked INTEGER NOT NULL,teachers TEXT NOT NULL,reason TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,UNIQUE(group_id,day));
@@ -37,12 +37,12 @@ export function rollcallTools({db,get,all,run,tx,requireRole,scope,audit,env,tra
    const c=get('SELECT * FROM classes WHERE group_id=? AND day=?',g.id,day),assigned=teachers(g);
    const roster=c?all('SELECT student_id FROM class_students WHERE class_id=?',c.id):all("SELECT gs.student_id FROM group_students gs JOIN students s ON s.id=gs.student_id WHERE gs.group_id=? AND s.status='approved'",g.id);
    const marked=c?Number(get("SELECT count(*) AS n FROM attendance a JOIN class_students cs ON cs.class_id=a.class_id AND cs.student_id=a.student_id WHERE a.class_id=? AND a.status<>'unmarked'",c.id).n):0;
-   const status=c?.cancelled||!g.active?'cancelled':!roster.length||marked>=roster.length?'resolved':'open';
+   const status=day<officialStart()?'testing':c?.cancelled||!g.active?'cancelled':!roster.length||marked>=roster.length?'resolved':'open';
    if(!old&&status!=='open')continue;
    const reason=!assigned.length?'Turma sem professor habilitado vinculado':!c?'Chamada não aberta':'Chamada incompleta',stamp=clock.toISOString(),teacherJson=JSON.stringify(assigned.map(({user_id,name})=>({user_id,name}))),id=old?.id||randomUUID();
    if(!old){run('INSERT INTO rollcall_issues VALUES(?,?,?,?,?,?,?,?,?,?,?)',id,g.id,day,g.unit,status,roster.length,marked,teacherJson,reason,stamp,stamp);audit('system','rollcall.issue.created:'+id)}
    else if(old.status!==status||old.marked!==marked||old.expected!==roster.length||old.teachers!==teacherJson||old.reason!==reason)run('UPDATE rollcall_issues SET status=?,expected=?,marked=?,teachers=?,reason=?,updated_at=? WHERE id=?',status,roster.length,marked,teacherJson,reason,stamp,id);
-   const eligible=p.enabled&&status==='open'&&now>=deadline?recipients(g,day,p):[];
+   const eligible=p.enabled&&status==='open'&&now>=deadline?recipients(g,day,p).filter(r=>emailAllowed(r.user_id)):[];
    for(const m of eligible){
     run('INSERT OR IGNORE INTO rollcall_notices(issue_id,recipient_id) VALUES(?,?)',id,m.user_id);
     const n=get('SELECT * FROM rollcall_notices WHERE issue_id=? AND recipient_id=?',id,m.user_id);
@@ -55,7 +55,7 @@ export function rollcallTools({db,get,all,run,tx,requireRole,scope,audit,env,tra
   }
  }
  function access(actor){return requireRole(actor,['admin','secretary','teacher'])}
- function settings(actor){const m=access(actor);return {...policy(),can_edit:m.role==='admin',mail_configured:!!(env.RESEND_API_KEY&&env.MAIL_FROM),time_zone:'America/Sao_Paulo',check_interval_minutes:5}}
+ function settings(actor){const m=access(actor);return {...policy(),official_start_date:officialStart(),can_edit:m.role==='admin',mail_configured:!!(env.RESEND_API_KEY&&env.MAIL_FROM),time_zone:'America/Sao_Paulo',check_interval_minutes:5}}
  function quiet(p,clock){const h=Number(brParts(clock).hour);return p.quiet_start!==p.quiet_end&&(p.quiet_start>p.quiet_end?(h>=p.quiet_start||h<p.quiet_end):(h>=p.quiet_start&&h<p.quiet_end))}
  let delivering=false;
  return {
@@ -68,12 +68,13 @@ export function rollcallTools({db,get,all,run,tx,requireRole,scope,audit,env,tra
    if(input?.version!==old.version)fail('As regras foram alteradas por outra pessoa. Atualize antes de salvar.',409);
    for(const k of ['enabled','teacher_email','manager_email']){if(typeof input[k]!=='boolean')fail('Escolha se os avisos estão ativados.');p[k]=input[k]}
    for(const [k,min,max]of [['grace_minutes',0,2880],['repeat_hours',1,168],['max_notices',1,5],['quiet_start',0,23],['quiet_end',0,23]]){if(!Number.isSafeInteger(input[k])||input[k]<min||input[k]>max)fail('Confira os limites dos prazos e horários dos avisos.');p[k]=input[k]}
+   setOfficialStart(actor,input.official_start_date,input.period_reason);
    p.version=old.version+1;run('UPDATE rollcall_policy SET value=? WHERE id=1',JSON.stringify(p));audit(actor,'rollcall.policy.updated:'+p.version);reconcile();return settings(actor);
   })},
   async rollcallIssues(actor,p={},clock=new Date()){
    const m=access(actor);tx(()=>reconcile(clock));
    return all('SELECT i.*,g.label,g.start_time,g.end_time,c.id AS class_id FROM rollcall_issues i JOIN class_groups g ON g.id=i.group_id LEFT JOIN classes c ON c.group_id=i.group_id AND c.day=i.day ORDER BY day DESC,g.start_time')
-    .filter(r=>(m.role!=='secretary'||scope.permits(actor,r.unit))&&(!p.unit||r.unit===p.unit)&&(!p.group_id||r.group_id===p.group_id)&&(!p.status||r.status===p.status)&&(m.role!=='teacher'||teachers({id:r.group_id,unit:r.unit}).some(t=>t.user_id===actor)))
+    .filter(r=>r.day>=officialStart()&&(m.role!=='secretary'||scope.permits(actor,r.unit))&&(!p.unit||r.unit===p.unit)&&(!p.group_id||r.group_id===p.group_id)&&(!p.status||r.status===p.status)&&(m.role!=='teacher'||teachers({id:r.group_id,unit:r.unit}).some(t=>t.user_id===actor)))
     .map(r=>({...r,can_write:canAttendanceWrite(actor,{unit:r.unit,group_id:r.group_id}),notify_after:new Date(+new Date(r.day+'T'+r.end_time+':00-03:00')+policy().grace_minutes*60000).toISOString(),within_grace:+clock<+new Date(r.day+'T'+r.end_time+':00-03:00')+policy().grace_minutes*60000,teachers:JSON.parse(r.teachers),notifications:all('SELECT n.recipient_id,m.email,m.role,n.status,n.send_count,n.last_sent,n.last_error FROM rollcall_notices n JOIN members m ON m.user_id=n.recipient_id WHERE n.issue_id=?',r.id).filter(n=>m.role!=='teacher'||n.recipient_id===actor)}));
   },
   async cancelClass(actor,id,p){return tx(()=>{const m=access(actor),c=get('SELECT * FROM classes WHERE id=?',id);if(!c)fail('Aula não localizada.',404);requireAttendanceWrite(actor,c);
@@ -92,7 +93,7 @@ export function rollcallTools({db,get,all,run,tx,requireRole,scope,audit,env,tra
      const claim=tx(()=>{
       const n=get('SELECT * FROM rollcall_notices WHERE issue_id=? AND recipient_id=?',candidate.issue_id,candidate.recipient_id),i=get('SELECT * FROM rollcall_issues WHERE id=?',candidate.issue_id),g=get('SELECT * FROM class_groups WHERE id=?',i.group_id),latest=policy();
       if(!latest.enabled||quiet(latest,clock)||i.status!=='open'||n.send_count>=latest.max_notices||!(['pending','retry'].includes(n.status)&&n.next_attempt<=now||n.status==='sending'&&n.lease_until<=now))return;
-      const m=recipients(g,i.day,latest).find(m=>m.user_id===n.recipient_id);if(!m)return;
+      const m=recipients(g,i.day,latest).find(m=>m.user_id===n.recipient_id);if(!m||!emailAllowed(m.user_id))return;
       // Resend retains idempotency keys for 24h. Ambiguous attempts stop before that boundary.
       if(n.attempts>=8||n.first_attempt&&now-n.first_attempt>=23*3600000){run("UPDATE rollcall_notices SET status='review',last_error='Envio sem confirmação; requer conferência do provedor.' WHERE issue_id=? AND recipient_id=?",n.issue_id,n.recipient_id);return}
       const payload=n.payload||JSON.stringify({from:env.MAIL_FROM,to:[m.email],subject:'Chamada pendente — Luta pela Comunidade',text:`A chamada de ${g.label}, núcleo ${i.unit}, em ${i.day.split('-').reverse().join('/')} (${g.start_time}–${g.end_time}, horário de Brasília), ainda precisa ser concluída.\n${i.marked} de ${i.expected} marcações registradas.\nAbra o painel, confira a aula e salve a chamada:\n${env.PUBLIC_ORIGIN||env.RENDER_EXTERNAL_URL||''}/${m.role==='teacher'?'professor':'administracao'}/#rollcall-area\nSe a aula não ocorreu, registre o cancelamento com motivo. Não marque faltas apenas para encerrar a pendência.\nO lembrete para automaticamente quando a chamada fica completa ou a aula é cancelada.`});
