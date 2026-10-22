@@ -19,6 +19,7 @@ function showPanel(id,{focus=true,history=true}={}){
 }
 function setupNavigation(){
  if(!$('students-area')){const box=el('section',undefined,{id:'students-area'});$('search').before(box);box.append(el('h2','Alunos'),document.querySelector('label[for="search"]'),$('search'),$('students'),$('detail'))}
+ if($('student-directory-tools'))document.querySelector('label[for="search"]').before($('student-directory-tools'));
  if(!$('workspace-menu')){const menu=el('nav',undefined,{id:'workspace-menu','aria-label':'Menu principal do painel'}),title=el('h2','',{id:'panel-title',tabindex:'-1'}),shell=el('div',undefined,{id:'workspace-nav-shell',class:'is-collapsed'}),toggle=el('button','Menu do painel',{id:'workspace-menu-toggle',type:'button','aria-controls':'workspace-menu','aria-expanded':'false'});toggle.addEventListener('click',()=>{const closed=shell.classList.toggle('is-collapsed');toggle.setAttribute('aria-expanded',String(!closed))});shell.append(toggle,menu);$('identity').parentElement.after(shell,title)}
  if(!$('download-controls')){const downloads=el('details',undefined,{id:'download-controls'});downloads.append(el('summary','Baixar planilhas e documentos'));$('students-area').querySelector('h2').after(downloads)}
  for(const id of ['export','doc-index','contacts-export'])if($(id))$('download-controls').append($(id));
