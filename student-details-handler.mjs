@@ -12,6 +12,8 @@ export async function handleStudentDetails({req,route,method,store,actor}){
  }
  if(route==='/graduation-policy'&&method==='PATCH')return json({policy:await store.saveGraduationPolicy(actor,await body()),message:'Regra atualizada para todos os alunos. Graduações já confirmadas foram preservadas.'});
  const match=route.match(/^\/students\/(UND[1-3]_\d{6})\/contact$/);
+ const draftContact=route.match(/^\/registrations\/([0-9a-f-]{36})\/draft-contact$/i);
+ if(draftContact&&method==='PATCH')return json({...await store.saveRegistrationDraftContact(actor,draftContact[1],await body()),message:'Contato do responsável salvo. Confira os documentos antes de aprovar.'});
  if(match){if(method==='GET')return json({contact:await store.studentContact(actor,match[1])});if(method==='PATCH')return json({contact:await store.saveStudentContact(actor,match[1],await body()),message:'Contato salvo. Permissões de acesso são geridas em Contas e vínculos.'})}
  if(route==='/contacts.csv'&&method==='GET')return new Response(csv(await store.contactExport(actor),['id','name','guardian_name','guardian_email','guardian_phone','relationship','version']),{headers:{...headers,'Content-Type':'text/csv; charset=utf-8','Content-Disposition':'attachment; filename="contatos-restritos.csv"'}});
  if(route==='/registrations'&&method==='POST')return json({...await store.manualRegistration(actor,await body()),message:'Candidato cadastrado para análise. Confira e anexe os documentos antes da decisão.'},201);

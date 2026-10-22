@@ -53,6 +53,10 @@ export async function handlePortal(req,env=process.env,injectedStore){
   const role=member.role,actor=user.id,staff=['admin','secretary'].includes(role);
   const requireRole=(...roles)=>{if(!roles.includes(role))fail('Acesso não permitido.',403)};
   requireRouteAccess(role,route,method);
+  if(route==='/registration-drafts/import'&&method==='POST'){
+   requireRole('admin');const result=await store.importRegistrationDrafts(actor,await body());
+   return json({...result,message:`${result.created} pré-cadastros importados; ${result.repeated} já existentes. Fotos privadas preservadas. Complete os responsáveis e documentos em Candidatos → Em complementação. Nenhuma matrícula foi aprovada.`},201);
+  }
   const administrativeUnits=staff&&store.administrativeScope?await store.administrativeScope(actor):undefined;
   if(role==='secretary'&&!store.forActor)fail('Separação por núcleo indisponível. Procure a administração.',503);
   if(store.forActor)store=store.forActor(actor);
@@ -89,7 +93,8 @@ export async function handlePortal(req,env=process.env,injectedStore){
   if(route==='/registrations'&&method==='GET'){
    requireRole('admin','secretary');const status=url.searchParams.get('status')||'pending',page=Number(url.searchParams.get('page')||0);
    if(!['pending','needs_info','approved','rejected'].includes(status)||!Number.isInteger(page)||page<0||page>10000)fail('Filtro inválido.');
-   const rows=await store.registrations(status,page*50);return json({registrations:rows.slice(0,50),has_more:rows.length>50,page});
+   const unit=url.searchParams.get('unit')||'';if(unit&&!['amavale','valparaiso','vale-do-carangola'].includes(unit))fail('Núcleo inválido.');
+   const rows=await store.registrations(status,page*50,unit);return json({registrations:rows.slice(0,50),has_more:rows.length>50,page});
   }
   const registrationMatch=route.match(/^\/registrations\/([0-9a-f-]+)(?:\/(review|documents\/([0-9a-f-]+)))?$/i);
   if(registrationMatch){

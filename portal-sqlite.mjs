@@ -1,4 +1,5 @@
 import {quotaAwareTransport} from './resend-quota.mjs';
+import {registrationDrafts} from './registration-drafts.mjs';
 import {projectPeriod} from './project-period.mjs';
 import {backupTools} from './backup-tools.mjs';
 import {registrationReadiness} from './registration-readiness.mjs';
@@ -163,7 +164,7 @@ export function createSqliteStore(env,{transport=fetch}={}){
    if(actor===uid||!target||['admin','secretary'].includes(target.role)||!['guardian','psychologist','social_worker','teacher'].includes(role)||role==='teacher'&&target.role!=='teacher'||typeof active!=='boolean')fail('Conta inválida.',403);
    run('UPDATE members SET role=?,active=? WHERE user_id=?',role,Number(active),uid);run('DELETE FROM links WHERE user_id=?',uid);run('DELETE FROM teacher_units WHERE user_id=?',uid);run("UPDATE teacher_profiles SET status='pending',test_access=0,version=version+1 WHERE user_id=?",uid);run("UPDATE professional_profiles SET status='pending',version=version+1 WHERE user_id=?",uid);run('DELETE FROM sessions WHERE user_id=?',uid);run('DELETE FROM challenges WHERE email=?',target.email);audit(actor,'member.update:'+uid);
   }),
-  registrations:async(status,offset=0)=>all('SELECT id,student_name,birth_date,unit,status,student_id,version,created_at FROM registrations WHERE status=? ORDER BY created_at,id LIMIT 51 OFFSET ?',status,offset),
+  registrations:async(status,offset=0,unit='')=>all('SELECT id,student_name,birth_date,unit,status,student_id,version,created_at FROM registrations WHERE status=? AND (?=\'\' OR unit=?) ORDER BY created_at,id LIMIT 51 OFFSET ?',status,unit,unit,offset),
   registration:async id=>asRegistration(get('SELECT * FROM registrations WHERE id=?',id)),
   receiveRegistration:async row=>tx(()=>{
    const old=asRegistration(get('SELECT * FROM registrations WHERE id=?',row.id));if(old){if(old.payload_hash!==row.payload_hash)fail('Protocolo já utilizado.',409);return old}
@@ -218,6 +219,7 @@ export function createSqliteStore(env,{transport=fetch}={}){
    return limited[name](...args);
   }});
  };
+ Object.assign(api,registrationDrafts({db,get,all,run,tx,requireRole,audit,upload:api.upload,removeObject:api.removeObject}));
  Object.assign(api,quickIntake({db,get,all,run,tx,requireRole,scope,audit,project,emailAllowed,requireUnit:teaching.requireUnit,env,transport}));
  Object.assign(api,registrationDocumentNotices({db,get,all,run,tx,requireRole,scope,env,transport,emailAllowed}));
  Object.assign(api,operationsTools({db,get,all,run,requireRole,scope,env,transport,emailAllowed,officialStart}));

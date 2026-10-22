@@ -65,10 +65,11 @@ export function scopedSecretaryStore(api,actor,{scope,get,all}) {
  allow('update',(_,row)=>student(row.id));
  allow('import',(_,rows)=>rows.forEach(r=>student(r.id)));
  rules.contactExport=async()=> (await api.contactExport(actor)).filter(r=>scope.permits(actor,studentUnit(r.id)));
- rules.registrations=async(status,offset=0)=>all(`SELECT id,student_name,birth_date,unit,status,student_id,version,created_at FROM registrations WHERE status=?${scope.sql(actor,'unit')} ORDER BY created_at,id LIMIT 51 OFFSET ?`,status,offset);
+ rules.registrations=async(status,offset=0,u='')=>{if(u)unit(u);return all(`SELECT id,student_name,birth_date,unit,status,student_id,version,created_at FROM registrations WHERE status=? AND (?='' OR unit=?)${scope.sql(actor,'unit')} ORDER BY created_at,id LIMIT 51 OFFSET ?`,status,u,u,offset)};
  allow('registration',id=>record('registrations',id));
  allow('registrationDocumentNotificationStatus');
  allow('manualRegistration',(_,p)=>unit(p.unit));
+ allow('saveRegistrationDraftContact',(_,id)=>record('registrations',id));
  allow('reviewRegistration registrationUpload',(_,id,p)=>{record('registrations',id);if(p?.existing_student_id)student(p.existing_student_id)});
  allow('groups classes unitRoster reports reportsExport attendanceExport workforceRoster workforceSessions workforceExport',(_,u)=>unit(u));
  allow('group',(_,id)=>record('class_groups',id));

@@ -24,8 +24,33 @@ function scopeUnitNames(){const all={amavale:'Amavale',valparaiso:'Valparaíso',
 async function openWorkspace(){me=await api('/me');document.body.dataset.portalRole=me.role;clearTimeout(sessionTimer);if(me.session_expires_at){const remaining=me.session_expires_at-Date.now();if(remaining<=0){reset();return;}sessionTimer=setTimeout(()=>reset(),remaining);}$('login').hidden=true;$('workspace').hidden=false;$('logout').hidden=false;$('identity').textContent=me.email+' · '+labels[me.role]+(me.role==='admin'?' · Todos os núcleos':me.role==='secretary'?' · '+(Object.values(scopeUnitNames()).join(', ')||'Sem núcleo atribuído — procure a administração geral'):'');$('test-access-banner')?.remove();if(me.test_access){const banner=el('p','Acesso de teste autorizado. As presenças e os relatos salvos aqui ficam registrados no sistema.',{id:'test-access-banner',class:'form-success',role:'status'});$('identity').parentElement.after(banner);}$('import-area').hidden=!['admin','secretary'].includes(me.role);$('team-area').hidden=me.role!=='admin';await load();notice(me.role==='teacher'?'Acesso autorizado. Abra a chamada ou registre uma ocorrência.':['psychologist','social_worker'].includes(me.role)?'Acesso autorizado. Consulte sua agenda e os relatos dos núcleos liberados.':'Acesso autorizado. Escolha uma opção no menu do painel.')}
 $('verify-code').addEventListener('submit',action(async()=>{const p=await api('/auth/verify',{method:'POST',data:{email:loginEmail,code:$('code').value.trim()}});token=p.access_token;sessionCache=await sessionCacheReady;sessionCache.save(p);$('code').value='';await openWorkspace()}));
 async function load(){students=['teacher','psychologist','social_worker'].includes(me.role)?[]:(await api('/students')).students;renderStudents();if(['admin','secretary'].includes(me.role))await loadMembers();document.dispatchEvent(new Event('portal:loaded'))}
-function renderStudents(){const q=$('search').value.toLocaleLowerCase('pt-BR');$('students').replaceChildren();for(const s of students.filter(s=>(s.name+' '+s.id).toLocaleLowerCase('pt-BR').includes(q))){const b=el('button',`${s.name} · ${s.age} anos\n${s.id}`);b.addEventListener('click',action(()=>detail(s.id)));$('students').append(b)}if(!$('students').children.length)$('students').append(el('p','Nenhum aluno encontrado. Se faltar um vínculo, procure a secretaria.'))}
+function renderStudents(){
+ const unitOf=s=>({UND1:'amavale',UND2:'valparaiso',UND3:'vale-do-carangola'}[s.id.slice(0,4)]),names=scopeUnitNames(),staff=['admin','secretary'].includes(me?.role);
+ let select=$('student-unit-filter');
+ if(staff&&!select){
+  const wrap=el('div',undefined,{id:'student-directory-tools',class:'admin-card'});wrap.append(el('label','Núcleo dos alunos',{for:'student-unit-filter'}));select=el('select',undefined,{id:'student-unit-filter'});
+  wrap.append(select,el('p','A busca abaixo procura apenas no núcleo selecionado. Cadastros ainda sem aprovação devem ser concluídos em Candidatos.',{class:'muted'}));
+  const candidates=el('button','Ver candidatos deste núcleo',{type:'button',class:'secondary'});candidates.addEventListener('click',action(async()=>{
+   if(typeof showPanel==='function')showPanel('registrations-area');
+   await registrations();if($('registration-unit-filter'))$('registration-unit-filter').value=select.value;
+   $('registration-status').value='needs_info';registrationPage=0;await registrations();
+  }));wrap.append(candidates,el('p','',{id:'student-directory-count',role:'status','aria-live':'polite'}));
+  (document.querySelector('label[for="search"]')||$('search')).before(wrap);select.addEventListener('change',()=>{if($('detail')){$('detail').hidden=true;$('detail').replaceChildren();}renderStudents()});
+ }
+ let selected=select?.value||'';
+ if(select){if(!names[selected])selected=Object.keys(names).length===1?Object.keys(names)[0]:'';select.replaceChildren(el('option','Todos os núcleos autorizados ('+students.length+')',{value:''}));for(const [id,label]of Object.entries(names))select.append(el('option',label+' ('+students.filter(s=>unitOf(s)===id).length+')',{value:id}));select.value=selected;}
+ const normalize=v=>v.normalize('NFD').replace(/\p{Diacritic}/gu,'').toLocaleLowerCase('pt-BR'),q=normalize($('search').value.trim()),scoped=students.filter(s=>!selected||unitOf(s)===selected),shown=scoped.filter(s=>normalize(s.name+' '+s.id).includes(q));
+ $('students').replaceChildren();
+ for(const [unit,label]of Object.entries(names)){
+  const rows=shown.filter(s=>unitOf(s)===unit);if(!rows.length)continue;
+  const group=el('section',undefined,{'aria-label':label});group.append(el('h3',label+' · '+rows.length+' cadastro(s)'));
+  for(const s of rows){const b=el('button',`${s.name} · ${s.age} anos\n${s.id} · ${label} · ${{approved:'Aprovado',pending:'Em análise',inactive:'Inativo'}[s.status]||''}`);b.addEventListener('click',action(()=>detail(s.id)));group.append(b)}$('students').append(group);
+ }
+ if(!shown.length)$('students').append(el('p',q?'Nenhum aluno corresponde à busca neste núcleo. Tente outro nome ou ID.':'Nenhuma ficha de aluno neste núcleo. Consulte Candidatos para completar os pré-cadastros antes da aprovação.'));
+ if($('student-directory-count'))$('student-directory-count').textContent=(selected?names[selected]:'Todos os núcleos autorizados')+' · '+shown.length+' de '+scoped.length+' cadastro(s) exibido(s).';
+}
 $('search').addEventListener('input',renderStudents);
+document.addEventListener('portal:logout',()=>$('student-directory-tools')?.remove());
 let fieldSequence=0;
 function field(form,label,name,value,{type='text',readOnly=false,options,min,max,step,htmlId}={}){const id=htmlId||'field-'+name+'-'+(++fieldSequence);form.append(el('label',label,{for:id}));const input=el(options?'select':'input',undefined,{id,name,...(!options?{type}:{})});if(options)for(const [v,t]of Object.entries(options))input.append(el('option',t,{value:v}));input.value=value??'';input.readOnly=readOnly;input.disabled=readOnly&&!!options;if(min!==undefined)input.min=min;if(max!==undefined)input.max=max;if(step)input.step=step;if(type==='text')input.maxLength=160;if(type==='number')input.inputMode=step&&step<1?'decimal':'numeric';if(type==='email'){input.autocomplete='email';input.autocapitalize='none'}if(type==='tel')input.inputMode='tel';form.append(input);if(type==='tel')phoneLinksReady.then(m=>m.attachPhoneField(input,label)).catch(()=>{});return input}
 async function detail(id){const request=Symbol(),target=$('detail'),box=el('div');detail.request=request;target.hidden=false;target.replaceChildren(el('p','Carregando ficha…',{role:'status'}));

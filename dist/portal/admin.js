@@ -25,7 +25,11 @@ async function dashboard(){
  $('dashboard-tables').replaceChildren(el('h3','Alunos por núcleo'),tableOf(['Núcleo','Alunos','Aprovados'],d.units.map(u=>[unitNames[u.unit]||u.unit,u.students,u.approved])),el('p',`${d.students} alunos no cadastro · ${d.documents} arquivos vinculados · ${d.registrations.period_received} inscrições recebidas no período.`));
 }
 async function registrations(){const request=Symbol(),status=$('registration-status').value,page=registrationPage;registrations.request=request;
- const p=await api('/registrations?status='+status+'&page='+page),box=$('registration-list');if(registrations.request!==request||$('registration-status').value!==status||registrationPage!==page)return;box.replaceChildren();
+ if(!$('registration-unit-filter')){
+  const box=el('div',undefined,{id:'registration-unit-controls'});box.append(el('label','Núcleo dos candidatos',{for:'registration-unit-filter'}));const select=el('select',undefined,{id:'registration-unit-filter'}),units=['amavale','valparaiso','vale-do-carangola'].filter(u=>me.role==='admin'||me.units?.includes(u));select.append(el('option','Todos os núcleos autorizados',{value:''}));for(const u of units)select.append(el('option',unitNames[u],{value:u}));if(units.length===1)select.value=units[0];select.addEventListener('change',action(async()=>{registrationPage=0;$('registration-detail').hidden=true;await registrations()}));box.append(select);$('registration-status').before(box);
+ }
+ const unit=$('registration-unit-filter').value;
+ const p=await api('/registrations?status='+status+'&page='+page+'&unit='+encodeURIComponent(unit)),box=$('registration-list');if(registrations.request!==request||$('registration-status').value!==status||registrationPage!==page||$('registration-unit-filter').value!==unit)return;box.replaceChildren();
  for(const r of p.registrations){const b=el('button',r.student_name+' · '+unitNames[r.unit]+' · '+new Date(r.created_at).toLocaleDateString('pt-BR'),{class:'registration-row secondary'});b.addEventListener('click',action(()=>review(r.id)));box.append(b)}
  if(!p.registrations.length)box.append(el('p','Nenhuma inscrição nesta situação.'));
  $('registration-page').textContent='Página '+(registrationPage+1);$('registrations-previous').disabled=registrationPage===0;$('registrations-next').disabled=!p.has_more;
@@ -90,7 +94,13 @@ async function review(id){const request=Symbol(),box=$('registration-detail');re
  if(review.request!==request||!box.isConnected)return false;
  box.dataset.registrationId=r.id;if($('registration-protocol'))$('registration-protocol').value=r.id;
  box.replaceChildren(el('h3',r.student_name),el('p',`${r.age} anos · ${unitNames[r.unit]} · ${decisionNames[r.status]}`),el('p','Protocolo: '+r.id,{class:'muted'}),el('p','Responsável: '+r.guardian_name+' · '+r.relationship),phoneContact(r.guardian_email+' · '+r.guardian_phone,r.guardian_phone,r.guardian_name));
- registrationReviewSummary(box,r);documentChecklist(box,r.documents,r);if(r.source==='staff')box.append(el('p','Origem: cadastro administrativo · '+r.source_reference));
+ registrationReviewSummary(box,r);documentChecklist(box,r.documents,r);if(r.source==='staff'||r.source==='staff_draft')box.append(el('p','Origem: cadastro administrativo · '+r.source_reference));
+ if(r.source==='staff_draft'&&r.status!=='approved'){
+  const contact=el('form');contact.append(el('h4','Completar responsável do pré-cadastro'));
+  for(const [key,label]of Object.entries({guardian_name:'Nome do responsável pelo pré-cadastro',guardian_email:'Email do responsável pelo pré-cadastro',guardian_phone:'Telefone do responsável pelo pré-cadastro',relationship:'Vínculo do responsável pelo pré-cadastro'}))field(contact,label,key,r[key],{type:key==='guardian_email'?'email':key==='guardian_phone'?'tel':'text'});
+  contact.append(el('button','Salvar responsável do pré-cadastro'));
+  contact.addEventListener('submit',action(async()=>{await api('/registrations/'+id+'/draft-contact',{method:'PATCH',data:{...Object.fromEntries(new FormData(contact)),version:r.version}});await review(id);notice('Contato salvo. Autorização e documentos precisam de conferência.')}));box.append(contact);
+ }
  if(r.reason)box.append(el('p','Última decisão: '+r.reason));if(r.student_id){box.append(el('p','ID vinculado: '+r.student_id));const open=el('button','Abrir ficha do aluno aprovado');open.addEventListener('click',action(()=>detail(r.student_id)));box.append(open)}
  for(const d of r.documents){const b=el('button','Baixar '+(kinds[d.kind]||'documento'),{class:'secondary'});b.addEventListener('click',action(async()=>download(await api('/registrations/'+id+'/documents/'+d.id,{blob:true}),'inscricao-'+d.id+(d.mime==='application/pdf'?'.pdf':d.mime==='image/png'?'.png':'.jpg'))));box.append(b)}
  if(r.status!=='approved'){
@@ -113,7 +123,7 @@ document.addEventListener('portal:loaded',action(async()=>{
  const staff=['admin','secretary'].includes(me.role);for(const id of ['admin-nav','dashboard-area','registrations-area'])$(id).hidden=!staff;$('audit-area').hidden=me.role!=='admin';
  if(staff){setupRegistrationSearch();await dashboard();await registrations();await registrationDocumentNoticeStatus()}if(me.role==='admin')await audit();
 }));
-document.addEventListener('portal:logout',()=>{for(const id of ['dashboard-cards','traffic-summary','dashboard-tables','registration-list','registration-detail','audit-list'])$(id).replaceChildren();registrationPage=0;$('registration-protocol-search')?.remove();$('registration-document-notices')?.remove();registrationDocumentNoticeStatus.request=Symbol();review.request=Symbol()});
+document.addEventListener('portal:logout',()=>{for(const id of ['dashboard-cards','traffic-summary','dashboard-tables','registration-list','registration-detail','audit-list'])$(id).replaceChildren();registrationPage=0;$('registration-unit-controls')?.remove();$('registration-protocol-search')?.remove();$('registration-document-notices')?.remove();registrationDocumentNoticeStatus.request=Symbol();review.request=Symbol()});
 $('dashboard-days').addEventListener('change',action(dashboard));$('refresh-dashboard').addEventListener('click',action(dashboard));$('refresh-audit').addEventListener('click',action(audit));
 $('registration-status').addEventListener('change',action(async()=>{registrationPage=0;await registrations()}));
 $('registrations-previous').addEventListener('click',action(async()=>{if(registrationPage>0)registrationPage--;await registrations()}));

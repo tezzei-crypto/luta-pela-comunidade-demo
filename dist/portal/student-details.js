@@ -76,3 +76,25 @@ function setupManualRegistration(){if($('manual-prospect'))return;const button=e
 }
 document.addEventListener('portal:loaded',()=>{if(['admin','secretary'].includes(me.role)){setupManualRegistration();if(!$('contacts-export')){const b=el('button','Baixar contatos CSV',{id:'contacts-export'});$('export').after(b);b.addEventListener('click',action(async()=>download(await api('/contacts.csv',{blob:true}),'contatos-restritos.csv')))}}});
 document.addEventListener('portal:logout',()=>{$('manual-prospect')?.previousElementSibling?.remove();$('manual-prospect')?.remove();$('contacts-export')?.remove()});
+
+function setupDraftImport(){
+ if(me.role!=='admin'||$('draft-import'))return;
+ const box=el('details',undefined,{id:'draft-import'});box.append(el('summary','Importar pré-cadastros incompletos com fotos'));
+ box.append(el('p','Para listas institucionais sem dados dos responsáveis. Importa nome, nascimento, referência de origem e foto privada. Não aprova matrículas, não registra consentimento e não gera ID de aluno. As fichas ficam em Candidatos → Em complementação. Dias, horários e professor das turmas devem ser definidos depois.'));
+ const form=el('form');const file=field(form,'Arquivo de pré-cadastros JSON (até 2 MB)','file','',{type:'file'});file.accept='.json,application/json';file.required=true;
+ form.append(el('p','Estrutura: unit (núcleo) e rows (lista). Cada item precisa de student_name, birth_date (AAAA-MM-DD), source_key (instituição e matrícula), source_reference (arquivo, turma e matrícula). Foto opcional: photo com name e content em base64. Até 50 candidatos por lote. Repita o mesmo arquivo para recuperar protocolos sem duplicar fichas.'));
+ form.append(el('button','Conferir pré-cadastros'));const preview=el('div');box.append(form,preview);$('import-area').append(box);
+ form.addEventListener('submit',action(async()=>{
+  preview.replaceChildren();const f=file.files[0];if(!f||f.size>2*1024*1024)throw Error('Escolha um JSON com até 2 MB.');
+  let data;try{data=JSON.parse(await f.text())}catch{throw Error('O arquivo não é um JSON válido.')}
+  const unit=scopeUnitNames()[data.unit];if(!unit||!Array.isArray(data.rows)||!data.rows.length||data.rows.length>50)throw Error('Confira o núcleo e a lista de 1 a 50 candidatos.');
+  preview.append(el('h3',data.rows.length+' pré-cadastros · '+unit));
+  const list=el('ul');for(const row of data.rows)list.append(el('li',String(row.student_name||'Sem nome')+' · '+String(row.birth_date||'Sem nascimento')+' · '+(row.photo?'Com foto privada':'Sem foto')));preview.append(list);
+  const button=el('button','Importar pré-cadastros sem aprovar');button.addEventListener('click',action(async()=>{
+   const result=await api('/registration-drafts/import',{method:'POST',data});
+   preview.replaceChildren(el('p',result.message,{role:'status'}));const records=el('ul');for(const r of result.records){const li=el('li');const open=el('button',r.name+' · Abrir pré-cadastro');open.addEventListener('click',action(()=>review(r.id)));li.append(open,el('p','Protocolo: '+r.id));records.append(li);}preview.append(records);await load();notice(result.message);
+  }));preview.append(button);
+ }));
+}
+document.addEventListener('portal:loaded',setupDraftImport);
+document.addEventListener('portal:logout',()=>$('draft-import')?.remove());

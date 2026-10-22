@@ -6,5 +6,6 @@ export function registrationReadiness(row){
  const consent_attachment=documents.some(d=>d.kind==='consent');
  const missing=Object.entries(required).filter(([kind])=>!documents.some(d=>d.kind===kind)).map(([,label])=>label);
  if(!online_consent&&!consent_attachment)missing.push('Comprovação da autorização do responsável');
+ if(row.source==='staff_draft')for(const [key,label]of Object.entries({guardian_name:'Nome do responsável',guardian_email:'Email do responsável',guardian_phone:'Telefone do responsável',relationship:'Vínculo do responsável'}))if(!row[key]?.trim())missing.push(label);
  return {online_consent,consent_attachment,missing,ready:missing.length===0};
 }
