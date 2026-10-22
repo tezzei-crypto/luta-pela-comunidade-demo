@@ -18,7 +18,7 @@ export function registrationDrafts({db,get,all,run,tx,requireRole,audit,upload,r
   });
  }
  return {
-  async studentDraftDirectory(actor){requireRole(actor,['admin','secretary']);return all("SELECT id,student_name AS name,birth_date,unit FROM registrations WHERE source='staff_draft' AND status IN ('pending','needs_info') AND student_id IS NULL ORDER BY student_name,id").map(r=>({...r,age:ageAt(r.birth_date),status:'incomplete',registration_id:r.id}));},
+  async studentDraftDirectory(actor){requireRole(actor,['admin','secretary']);return all("SELECT r.id,r.student_name AS name,r.birth_date,r.unit,g.label AS provisional_group_label FROM registrations r LEFT JOIN group_registrations gr ON gr.registration_id=r.id LEFT JOIN class_groups g ON g.id=gr.group_id WHERE r.source='staff_draft' AND r.status IN ('pending','needs_info') AND r.student_id IS NULL ORDER BY r.student_name,r.id").map(r=>({...r,age:ageAt(r.birth_date),status:'incomplete',registration_id:r.id}));},
   async importRegistrationDrafts(actor,p){
    requireRole(actor,['admin']);
    if(!p||!['amavale','valparaiso','vale-do-carangola'].includes(p.unit)||!Array.isArray(p.rows)||!p.rows.length||p.rows.length>50)fail('Selecione o núcleo e um lote de 1 a 50 candidatos.');

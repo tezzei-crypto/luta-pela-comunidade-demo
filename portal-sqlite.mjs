@@ -192,9 +192,13 @@ export function createSqliteStore(env,{transport=fetch}={}){
      run('INSERT INTO students(id,name,birth_date,status,updated_at) VALUES(?,?,?,?,?)',sid,newRow.name,newRow.birth_date,'approved',nowIso());
     }
     project.approvedContact({...r,student_id:sid},actor);
+    run('INSERT OR IGNORE INTO group_students(group_id,student_id) SELECT group_id,? FROM group_registrations WHERE registration_id=?',sid,id);
+    run('UPDATE class_groups SET version=version+1 WHERE id IN (SELECT group_id FROM group_registrations WHERE registration_id=?)',id);
+    run('DELETE FROM group_registrations WHERE registration_id=?',id);
     for(const d of r.documents)documentRow({...d,student_id:sid,created_by:actor});
     api.finalizeIntake(actor,intake,sid);
    }
+   if(p.decision==='rejected'){run('UPDATE class_groups SET version=version+1 WHERE id IN (SELECT group_id FROM group_registrations WHERE registration_id=?)',id);run('DELETE FROM group_registrations WHERE registration_id=?',id);}
    run('UPDATE registrations SET status=?,reason=?,student_id=?,version=version+1,reviewed_by=?,reviewed_at=? WHERE id=?',p.decision,p.reason.trim(),sid,actor,nowIso(),id);audit(actor,'registration.'+p.decision+':'+id,sid);return {student_id:sid,status:p.decision};
   }),
   recordMetric:async event=>tx(()=>{run('DELETE FROM metric_events WHERE created_at<?',new Date(Date.now()-90*86400000).toISOString());run('INSERT OR IGNORE INTO metric_events(event_id,page,session_hash,visitor_hash,created_at) VALUES(?,?,?,?,?)',event.event_id,event.page,event.session_hash,event.visitor_hash,nowIso())}),

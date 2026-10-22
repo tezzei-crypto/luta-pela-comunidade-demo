@@ -35,6 +35,7 @@ test('Pré-cadastros: importação apenas geral, rejeita conflitos, fotos invál
 });
 test('Pré-cadastros: contato editável só no núcleo, exige versão e mantém aprovação bloqueada até responsável e documentos completos',async t=>{
  const f=await fixture(t),result=await f.store.importRegistrationDrafts(f.admin.user_id,f.packet),id=result.records[0].id;let r=await f.store.registration(id);
+ const group=await f.store.saveGroup(f.admin.user_id,null,{unit:f.packet.unit,label:'Manhã Fictícia',weekdays:[1,3],start_time:'10:30',end_time:'11:30',active:false,students:[],teachers:[],registrations:[id],version:0});
  const contact={guardian_name:'Responsável Fictício',guardian_email:'family@example.test',guardian_phone:'24999999999',relationship:'Mãe',version:r.version};
  assert.equal((await f.req(f.other,'/registrations/'+id+'/draft-contact','PATCH',contact)).status,403);
  assert.equal((await f.req(f.guardian,'/registrations/'+id+'/draft-contact','PATCH',contact)).status,403);
@@ -45,6 +46,7 @@ test('Pré-cadastros: contato editável só no núcleo, exige versão e mantém 
  await assert.rejects(f.store.reviewRegistration(f.admin.user_id,id,{version:r.version,decision:'approved',reason:'',checked:true}),{status:400});
  contact.version=r.version;assert.equal((await f.req(f.local,'/registrations/'+id+'/draft-contact','PATCH',contact)).status,200);assert.equal((await f.req(f.local,'/registrations/'+id+'/draft-contact','PATCH',contact)).status,409);
  r=await f.store.registration(id);assert.equal(registrationReadiness(r).ready,true);const approved=await f.store.reviewRegistration(f.admin.user_id,id,{version:r.version,decision:'approved',reason:'',checked:true});assert.equal(approved.student_id,'UND3_000001');assert.equal((await f.store.documents(approved.student_id)).filter(d=>d.kind==='photo').length,1);
+ const enrolled=await f.store.group(f.admin.user_id,group.id);assert.ok(enrolled.students.find(s=>s.id===approved.student_id).enrolled);assert.equal(enrolled.version,2);assert.equal(enrolled.registrations.length,0);assert.equal(f.db.prepare('SELECT count(*) n FROM group_registrations').get().n,0);assert.equal((await f.store.groups(f.admin.user_id,f.packet.unit))[0].enrolled,1);
  assert.equal((await f.req(f.local,'/registrations/'+id+'/draft-contact','PATCH',{...contact,version:r.version+1})).status,409);
 });
 
@@ -53,4 +55,28 @@ test('Alunos inclui pré-cadastros importados para contato posterior, sem duplic
  const local=await (await f.req(f.local,'/students')).json();assert.equal(local.students.length,0);assert.equal(local.drafts.length,1);assert.equal(local.drafts[0].status,'incomplete');assert.equal(local.drafts[0].name,f.row.student_name);
  assert.equal((await (await f.req(f.other,'/students')).json()).drafts.length,0);assert.equal((await (await f.req(f.guardian,'/students')).json()).drafts.length,0);
  f.db.prepare("UPDATE registrations SET status='rejected'").run();assert.equal((await (await f.req(f.admin,'/students')).json()).drafts.length,0);
+});
+
+
+test('Turmas: pré-cadastro incompleto fica vinculado sem aprovação, foto preservada e uma turma por criança',async t=>{
+ const f=await fixture(t),imported=await f.store.importRegistrationDrafts(f.admin.user_id,f.packet),id=imported.records[0].id;
+ const data={unit:f.packet.unit,label:'Manhã Fictícia',weekdays:[1,3],start_time:'10:30',end_time:'11:30',active:false,students:[],teachers:[],registrations:[id],version:0};
+ const response=await f.req(f.local,'/groups','POST',data);assert.equal(response.status,201);const group=(await response.json()).group;
+ let list=(await (await f.req(f.local,'/groups?unit='+f.packet.unit)).json()).groups;assert.equal(list[0].provisional_enrolled,1);assert.equal(list[0].enrolled,0);
+ const draft=await f.store.registration(id);assert.equal(draft.status,'needs_info');assert.equal(draft.student_id,null);assert.equal(draft.documents.length,1);assert.equal((await f.store.students()).length,0);
+ assert.equal((await (await f.req(f.local,'/students')).json()).drafts[0].provisional_group_label,data.label);
+ assert.equal((await f.req(f.other,'/groups/'+group.id)).status,403);assert.equal((await f.req(f.guardian,'/groups/'+group.id)).status,403);
+ assert.equal((await f.req(f.local,'/groups','POST',{...data,label:'Tarde Fictícia',start_time:'15:00',end_time:'16:00'})).status,409);
+ assert.equal((await f.req(f.local,'/groups/'+group.id,'PATCH',{...data,version:1,registrations:[id,id]})).status,400);
+ assert.equal((await f.req(f.local,'/groups','POST',{...data,unit:'amavale'})).status,403);
+ const {registrations,...legacy}=data;assert.equal((await f.req(f.local,'/groups/'+group.id,'PATCH',{...legacy,version:1})).status,200);assert.equal((await f.store.groups(f.admin.user_id,f.packet.unit))[0].provisional_enrolled,1);
+ assert.equal((await f.req(f.local,'/groups/'+group.id,'PATCH',{...data,version:1})).status,409);
+ assert.equal((await f.req(f.local,'/groups/'+group.id,'PATCH',{...data,version:2,registrations:[]})).status,200);assert.equal((await f.store.groups(f.admin.user_id,f.packet.unit))[0].provisional_enrolled,0);
+});
+
+
+test('Turmas: decisão de não aprovação retira vínculo provisório e invalida edição antiga da turma',async t=>{
+ const f=await fixture(t),imported=await f.store.importRegistrationDrafts(f.admin.user_id,f.packet),id=imported.records[0].id;
+ const g=await f.store.saveGroup(f.admin.user_id,null,{unit:f.packet.unit,label:'Turma Fictícia',weekdays:[1],start_time:'10:30',end_time:'11:30',active:false,students:[],teachers:[],registrations:[id],version:0});
+ await f.store.reviewRegistration(f.admin.user_id,id,{decision:'rejected',reason:'Decisão fictícia de teste',version:1});assert.equal(f.db.prepare('SELECT count(*) n FROM group_registrations').get().n,0);assert.equal((await f.store.group(f.admin.user_id,g.id)).version,2);assert.equal((await f.store.groups(f.admin.user_id,f.packet.unit))[0].provisional_enrolled,0);
 });

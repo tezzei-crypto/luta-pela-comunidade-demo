@@ -88,3 +88,10 @@ test('Professor sem email: interface permite nome e telefone e edição posterio
  f.w.api=async()=>({teacher:{name:'Docente Fictício',phone:'24999999999',email:'',email_pending:true,units:['amavale'],status:'pending',version:1}});
  await f.run("teacherDetail('DRAFT')");assert.equal(f.d.querySelector('[name=email]').required,false);assert.equal(f.d.querySelector('[name=email]').readOnly,false);assert.equal(f.d.querySelector('[name=name]').required,true);assert.equal(f.d.querySelector('[name=phone]').required,true);assert.equal(f.d.querySelector('input[type=file]'),null);assert.match(f.d.body.textContent,/sem conta de acesso/);
 });
+
+test('Turmas permite selecionar pré-cadastro incompleto sem misturar a lista de aprovados',async t=>{
+ const f=ui(t,'<select id="groups-unit"><option value="amavale">Amavale</option></select><section id="group-detail"></section>');f.run("const weekdayNames=['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];async function groupList(){};async function loadAttendanceGroups(){}");f.load('groups.js','groupDetail');let sent;
+ const group={id:'G',unit:'amavale',label:'Turma Fictícia',weekdays:[1,3],start_time:'10:30',end_time:'11:30',active:false,version:1,students:[],teachers:[],registrations:[{id:'R',name:'Criança Fictícia',source_reference:'Origem fictícia · MANHÃ',enrolled:false}]};
+ f.w.api=async(url,opts)=>{if(opts){sent=opts.data;return {group,message:'Salvo'}}return url==='/teachers'?{teachers:[]}:{group}};
+ await f.run("groupDetail('G')");const pick=f.d.querySelector('[name=registrations]');assert.ok(pick);assert.match(f.d.body.textContent,/não aprova documentos/);pick.checked=true;f.d.querySelector('form').dispatchEvent(new f.w.Event('submit',{cancelable:true}));await tick();assert.deepEqual(Array.from(sent.registrations),['R']);assert.equal(sent.students.length,0);
+});
