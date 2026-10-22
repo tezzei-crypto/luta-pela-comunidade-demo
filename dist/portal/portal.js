@@ -6,7 +6,7 @@ const phoneLinksReady=import('/portal/phone-links.js');
 function phoneContact(text,phone,label='Contato'){const p=el('p',text);phoneLinksReady.then(m=>m.appendPhoneLink(p,phone,label)).catch(()=>{});return p}
 const sessionCacheReady=import('/portal/session-cache.js').then(m=>m.createSessionCache());
 let sessionCache=null,sessionTimer;sessionCacheReady.then(cache=>sessionCache=cache);
-let token='',me=null,students=[],chosen='',previewToken='',loginEmail='';
+let token='',me=null,students=[],studentDrafts=[],chosen='',previewToken='',loginEmail='';
 function el(tag,text,attrs={}){const n=document.createElement(tag);if(text!==undefined)n.textContent=text;for(const [k,v]of Object.entries(attrs))n.setAttribute(k,v);return n}
 function notice(text,error=false){$('notice').textContent=text;$('notice').classList.toggle('error',error)}
 async function api(path,{method='GET',data,form,blob=false}={}){
@@ -16,20 +16,20 @@ async function api(path,{method='GET',data,form,blob=false}={}){
  catch(error){if(error.status===401&&token)reset();throw error}
 }
 const action=createPortalAction({notice,el});
-function reset(){clearTimeout(sessionTimer);sessionCache?.clear();token='';me=null;delete document.body.dataset.portalRole;students=[];previewToken='';chosen='';$('workspace').hidden=true;$('detail').replaceChildren();$('students').replaceChildren();$('members').replaceChildren();$('preview').replaceChildren();$('link-user').replaceChildren();$('link-student').replaceChildren();$('logout').hidden=true;$('login').hidden=false;$('code').value='';$('test-access-banner')?.remove();document.dispatchEvent(new Event('portal:logout'));notice('Sessão encerrada. Entre novamente quando precisar.')}
+function reset(){clearTimeout(sessionTimer);sessionCache?.clear();token='';me=null;delete document.body.dataset.portalRole;students=[];studentDrafts=[];previewToken='';chosen='';$('workspace').hidden=true;$('detail').replaceChildren();$('students').replaceChildren();$('members').replaceChildren();$('preview').replaceChildren();$('link-user').replaceChildren();$('link-student').replaceChildren();$('logout').hidden=true;$('login').hidden=false;$('code').value='';$('test-access-banner')?.remove();document.dispatchEvent(new Event('portal:logout'));notice('Sessão encerrada. Entre novamente quando precisar.')}
 function download(blob,name){const url=URL.createObjectURL(blob),a=el('a','',{href:url,download:name});document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),30000)}
 $('logout').addEventListener('click',action(async()=>{try{await api('/auth/logout',{method:'POST',data:{}})}finally{reset()}}));
 $('request-code').addEventListener('submit',action(async()=>{loginEmail=$('email').value.trim().toLowerCase();const p=await api('/auth/request',{method:'POST',data:{email:loginEmail}});notice(p.message);$('verify-code').hidden=false;$('code').focus()}));
 function scopeUnitNames(){const all={amavale:'Amavale',valparaiso:'Valparaíso','vale-do-carangola':'Vale do Carangola'};return Object.fromEntries(Object.entries(all).filter(([u])=>me?.role!=='secretary'||me.units?.includes(u)))}
 async function openWorkspace(){me=await api('/me');document.body.dataset.portalRole=me.role;clearTimeout(sessionTimer);if(me.session_expires_at){const remaining=me.session_expires_at-Date.now();if(remaining<=0){reset();return;}sessionTimer=setTimeout(()=>reset(),remaining);}$('login').hidden=true;$('workspace').hidden=false;$('logout').hidden=false;$('identity').textContent=me.email+' · '+labels[me.role]+(me.role==='admin'?' · Todos os núcleos':me.role==='secretary'?' · '+(Object.values(scopeUnitNames()).join(', ')||'Sem núcleo atribuído — procure a administração geral'):'');$('test-access-banner')?.remove();if(me.test_access){const banner=el('p','Acesso de teste autorizado. As presenças e os relatos salvos aqui ficam registrados no sistema.',{id:'test-access-banner',class:'form-success',role:'status'});$('identity').parentElement.after(banner);}$('import-area').hidden=!['admin','secretary'].includes(me.role);$('team-area').hidden=me.role!=='admin';await load();notice(me.role==='teacher'?'Acesso autorizado. Abra a chamada ou registre uma ocorrência.':['psychologist','social_worker'].includes(me.role)?'Acesso autorizado. Consulte sua agenda e os relatos dos núcleos liberados.':'Acesso autorizado. Escolha uma opção no menu do painel.')}
 $('verify-code').addEventListener('submit',action(async()=>{const p=await api('/auth/verify',{method:'POST',data:{email:loginEmail,code:$('code').value.trim()}});token=p.access_token;sessionCache=await sessionCacheReady;sessionCache.save(p);$('code').value='';await openWorkspace()}));
-async function load(){students=['teacher','psychologist','social_worker'].includes(me.role)?[]:(await api('/students')).students;renderStudents();if(['admin','secretary'].includes(me.role))await loadMembers();document.dispatchEvent(new Event('portal:loaded'))}
+async function load(){const directory=['teacher','psychologist','social_worker'].includes(me.role)?{students:[],drafts:[]}:await api('/students');students=directory.students;studentDrafts=directory.drafts||[];renderStudents();if(['admin','secretary'].includes(me.role))await loadMembers();document.dispatchEvent(new Event('portal:loaded'))}
 function renderStudents(){
- const unitOf=s=>({UND1:'amavale',UND2:'valparaiso',UND3:'vale-do-carangola'}[s.id.slice(0,4)]),names=scopeUnitNames(),staff=['admin','secretary'].includes(me?.role);
+ const unitOf=s=>s.unit||({UND1:'amavale',UND2:'valparaiso',UND3:'vale-do-carangola'}[s.id.slice(0,4)]),names=scopeUnitNames(),staff=['admin','secretary'].includes(me?.role),directory=staff?students.concat(typeof studentDrafts==='undefined'?[]:studentDrafts):students;
  let select=$('student-unit-filter');
  if(staff&&!select){
   const wrap=el('div',undefined,{id:'student-directory-tools',class:'admin-card'});wrap.append(el('label','Núcleo dos alunos',{for:'student-unit-filter'}));select=el('select',undefined,{id:'student-unit-filter'});
-  wrap.append(select,el('p','A busca abaixo procura apenas no núcleo selecionado. Cadastros ainda sem aprovação devem ser concluídos em Candidatos.',{class:'muted'}));
+  wrap.append(select,el('p','A busca abaixo procura apenas no núcleo selecionado. Cadastros incompletos também aparecem aqui. Abra a ficha para completar os dados com a família.',{class:'muted'}));
   const candidates=el('button','Ver candidatos deste núcleo',{type:'button',class:'secondary'});candidates.addEventListener('click',action(async()=>{
    if(typeof showPanel==='function')showPanel('registrations-area');
    await registrations();if($('registration-unit-filter'))$('registration-unit-filter').value=select.value;
@@ -38,13 +38,13 @@ function renderStudents(){
   (document.querySelector('label[for="search"]')||$('search')).before(wrap);select.addEventListener('change',()=>{if($('detail')){$('detail').hidden=true;$('detail').replaceChildren();}renderStudents()});
  }
  let selected=select?.value||'';
- if(select){if(!names[selected])selected=Object.keys(names).length===1?Object.keys(names)[0]:'';select.replaceChildren(el('option','Todos os núcleos autorizados ('+students.length+')',{value:''}));for(const [id,label]of Object.entries(names))select.append(el('option',label+' ('+students.filter(s=>unitOf(s)===id).length+')',{value:id}));select.value=selected;}
- const normalize=v=>v.normalize('NFD').replace(/\p{Diacritic}/gu,'').toLocaleLowerCase('pt-BR'),q=normalize($('search').value.trim()),scoped=students.filter(s=>!selected||unitOf(s)===selected),shown=scoped.filter(s=>normalize(s.name+' '+s.id).includes(q));
+ if(select){if(!names[selected])selected=Object.keys(names).length===1?Object.keys(names)[0]:'';select.replaceChildren(el('option','Todos os núcleos autorizados ('+directory.length+')',{value:''}));for(const [id,label]of Object.entries(names))select.append(el('option',label+' ('+directory.filter(s=>unitOf(s)===id).length+')',{value:id}));select.value=selected;}
+ const normalize=v=>v.normalize('NFD').replace(/\p{Diacritic}/gu,'').toLocaleLowerCase('pt-BR'),q=normalize($('search').value.trim()),scoped=directory.filter(s=>!selected||unitOf(s)===selected),shown=scoped.filter(s=>normalize(s.name+' '+s.id).includes(q));
  $('students').replaceChildren();
  for(const [unit,label]of Object.entries(names)){
   const rows=shown.filter(s=>unitOf(s)===unit);if(!rows.length)continue;
   const group=el('section',undefined,{'aria-label':label});group.append(el('h3',label+' · '+rows.length+' cadastro(s)'));
-  for(const s of rows){const b=el('button',`${s.name} · ${s.age} anos\n${s.id} · ${label} · ${{approved:'Aprovado',pending:'Em análise',inactive:'Inativo'}[s.status]||''}`);b.addEventListener('click',action(()=>detail(s.id)));group.append(b)}$('students').append(group);
+  for(const s of rows){const b=el('button',`${s.name} · ${s.age} anos\n${s.registration_id?'Pré-cadastro':s.id} · ${label} · ${{incomplete:'Cadastro incompleto — completar dados com a família',approved:'Aprovado',pending:'Em análise',inactive:'Inativo'}[s.status]||''}`);b.addEventListener('click',action(async()=>{if(s.registration_id){if(typeof showPanel==='function')showPanel('registrations-area');await review(s.registration_id);}else await detail(s.id);}));group.append(b)}$('students').append(group);
  }
  if(!shown.length)$('students').append(el('p',q?'Nenhum aluno corresponde à busca neste núcleo. Tente outro nome ou ID.':'Nenhuma ficha de aluno neste núcleo. Consulte Candidatos para completar os pré-cadastros antes da aprovação.'));
  if($('student-directory-count'))$('student-directory-count').textContent=(selected?names[selected]:'Todos os núcleos autorizados')+' · '+shown.length+' de '+scoped.length+' cadastro(s) exibido(s).';

@@ -47,3 +47,10 @@ test('Pré-cadastros: contato editável só no núcleo, exige versão e mantém 
  r=await f.store.registration(id);assert.equal(registrationReadiness(r).ready,true);const approved=await f.store.reviewRegistration(f.admin.user_id,id,{version:r.version,decision:'approved',reason:'',checked:true});assert.equal(approved.student_id,'UND3_000001');assert.equal((await f.store.documents(approved.student_id)).filter(d=>d.kind==='photo').length,1);
  assert.equal((await f.req(f.local,'/registrations/'+id+'/draft-contact','PATCH',{...contact,version:r.version+1})).status,409);
 });
+
+test('Alunos inclui pré-cadastros importados para contato posterior, sem duplicar ficha aprovada nem vazar outro núcleo',async t=>{
+ const f=await fixture(t);await f.req(f.admin,'/registration-drafts/import','POST',f.packet);
+ const local=await (await f.req(f.local,'/students')).json();assert.equal(local.students.length,0);assert.equal(local.drafts.length,1);assert.equal(local.drafts[0].status,'incomplete');assert.equal(local.drafts[0].name,f.row.student_name);
+ assert.equal((await (await f.req(f.other,'/students')).json()).drafts.length,0);assert.equal((await (await f.req(f.guardian,'/students')).json()).drafts.length,0);
+ f.db.prepare("UPDATE registrations SET status='rejected'").run();assert.equal((await (await f.req(f.admin,'/students')).json()).drafts.length,0);
+});

@@ -82,3 +82,9 @@ for(const [file,name,select,list,key]of [['attendance.js','classList','class-uni
   const row={id:'old',label:'Resultado obsoleto',day:'2026-10-08',weekdays:[2],active:true};calls[0].resolve({[key]:[row]});calls[1].resolve({[key]:[row]});await Promise.all([a,b]);assert.equal(f.d.querySelector('#'+list).textContent,expected);
  });
 }
+
+test('Professor sem email: interface permite nome e telefone e edição posterior do email sem documentos ou acesso',async t=>{
+ const f=ui(t,'<section id="teacher-detail" tabindex="-1"></section>'),s=source('teachers.js');f.run(s.slice(0,s.indexOf('async function teacherList(')));f.load('teachers.js','teacherDetail');
+ f.w.api=async()=>({teacher:{name:'Docente Fictício',phone:'24999999999',email:'',email_pending:true,units:['amavale'],status:'pending',version:1}});
+ await f.run("teacherDetail('DRAFT')");assert.equal(f.d.querySelector('[name=email]').required,false);assert.equal(f.d.querySelector('[name=email]').readOnly,false);assert.equal(f.d.querySelector('[name=name]').required,true);assert.equal(f.d.querySelector('[name=phone]').required,true);assert.equal(f.d.querySelector('input[type=file]'),null);assert.match(f.d.body.textContent,/sem conta de acesso/);
+});

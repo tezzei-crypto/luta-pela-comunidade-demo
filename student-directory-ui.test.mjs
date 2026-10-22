@@ -19,3 +19,7 @@ test('Alunos: navegação mantém filtros dentro da seção correta, inclusive n
  const c=f.c;vm.runInContext(fs.readFileSync(new URL('./dist/portal/navigation.js',import.meta.url),'utf8'),c);vm.runInContext('setupNavigation()',c);
  assert.equal(w.$('student-directory-tools').parentElement.id,'students-area');assert.equal(w.$('students-area').classList.contains('is-current'),false);
 });
+
+test('Alunos mostra pré-cadastro no núcleo e abre a ficha de complementação',async t=>{
+ const f=fixture(t),w=f.w;w.studentDrafts=[{id:'draft-ficticio',registration_id:'draft-ficticio',name:'Criança Importada',unit:'vale-do-carangola',age:8,status:'incomplete'}];let opened='';w.review=id=>{opened=id};w.showPanel=()=>{};f.render();const select=w.$('student-unit-filter');select.value='vale-do-carangola';select.dispatchEvent(new w.Event('change'));assert.match(select.selectedOptions[0].textContent,/\(2\)/);const button=[...w.$('students').querySelectorAll('button')].find(b=>b.textContent.includes('Criança Importada'));assert.match(button.textContent,/Cadastro incompleto/);button.click();await new Promise(r=>setImmediate(r));assert.equal(opened,'draft-ficticio');
+});

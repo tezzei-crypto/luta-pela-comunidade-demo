@@ -26,7 +26,7 @@ export function scopedSecretaryStore(api,actor,{scope,get,all}) {
  const unit=u=>scope.requireUnit(actor,u),student=id=>unit(studentUnit(id));
  const record=(table,id,key='id')=>{const r=get(`SELECT * FROM ${table} WHERE ${key}=?`,id);if(!r)fail('Registro indisponível.',404);unit(r.unit);return r};
  const booking=id=>{const r=get('SELECT s.unit FROM bookings b JOIN appointment_slots s ON s.id=b.slot_id WHERE b.id=?',id);if(!r)fail('Atendimento indisponível.',404);unit(r.unit)};
- const staffUnits=(type,id)=>all(`SELECT unit FROM ${type}_units WHERE ${type==='monitor'?'monitor_id':'user_id'}=?`,id).map(r=>r.unit);
+ const staffUnits=(type,id)=>{if(type==='teacher'){const draft=get('SELECT payload FROM teacher_drafts WHERE user_id=?',id);if(draft)return JSON.parse(draft.payload).units;}return all(`SELECT unit FROM ${type}_units WHERE ${type==='monitor'?'monitor_id':'user_id'}=?`,id).map(r=>r.unit)};
  const staff=(type,id)=>{const us=staffUnits(type,id);if(!us.length||!us.every(u=>scope.permits(actor,u)))fail('O cadastro compartilhado ou sem núcleo é gerenciado pela administração geral.',403)};
  const staffPayload=(type,id,p)=>{if(id)staff(type,id);scope.validate(p.units).forEach(unit);
   const existing=get('SELECT user_id FROM members WHERE email=?',String(p.email||'').trim().toLowerCase());
@@ -46,7 +46,7 @@ export function scopedSecretaryStore(api,actor,{scope,get,all}) {
   if(!write){const d=get('SELECT student_id FROM documents WHERE object_path=?',key);if(d)return student(d.student_id)}
   deny();
  };
- const rules={};
+ const rules={studentDraftDirectory:async()=>filter(await api.studentDraftDirectory(actor))};
  const allow=(names,check=()=>{})=>{for(const n of names.split(' '))rules[n]=async(...args)=>{check(...args);return api[n](...args)}};
  allow('systemRevision audit attendanceAuthority rollcallSettings absencePolicy absenceAttention attendanceReport attendanceReportOptions attendanceAlerts attendanceAlert attendanceFollowup attendanceRecipients rollcallIssues');
  allow('links',id=>{if(id!==actor)deny()});

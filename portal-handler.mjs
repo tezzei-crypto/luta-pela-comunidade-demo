@@ -144,7 +144,7 @@ export async function handlePortal(req,env=process.env,injectedStore){
    }
   }
   if(route==='/students'&&method==='GET'&&role==='teacher')return json({students:[]});
-  if(route==='/students'&&method==='GET')return json({students:(await roster()).map(r=>({...clean(r),age:ageAt(r.birth_date)}))});
+  if(route==='/students'&&method==='GET')return json({students:(await roster()).map(r=>({...clean(r),age:ageAt(r.birth_date)})),drafts:['admin','secretary'].includes(role)?await store.studentDraftDirectory(actor):[]});
   let match=route.match(/^\/students\/(UND[1-3]_\d{6})(\/documents)?$/);
   if(match){
    const row=await student(match[1]);

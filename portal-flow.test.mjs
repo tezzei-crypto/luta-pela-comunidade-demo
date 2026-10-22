@@ -186,3 +186,20 @@ test('Secretaria gerencia situação da ficha dentro do núcleo autorizado',asyn
  const {request,store,admin,login}=await fixture(t);await store.import(admin.user_id,[{...pupil,status:'pending'}]);await store.saveStaffAccount(admin.user_id,null,{name:'Secretaria Fictícia',email:'secretary@example.test',phone:'24999999999',role:'secretary',active:true,version:0,units:['amavale']});const token=await login('secretary@example.test');
  assert.equal((await request('/students/'+pupil.id,{token,method:'PATCH',data:{version:1,status:'approved'}})).status,200);assert.equal((await store.student(pupil.id)).status,'approved');
 });
+
+test('Professor pendente sem email: persiste sem conta, evita duplicação e permite completar a mesma ficha',async t=>{
+ const {request,store,admin}=await fixture(t),before=(await store.members()).length;
+ const payload={...teacherData,email:'',name:'Docente Sem Email Fictício',units:['vale-do-carangola']};
+ const created=await request('/teachers',{method:'POST',data:payload});assert.equal(created.status,201);let person=(await created.json()).teacher;
+ assert.equal(person.email_pending,true);assert.equal(person.active,false);assert.equal(person.test_access,false);assert.equal((await store.members()).length,before);
+ assert.equal((await (await request('/teachers/'+person.user_id)).json()).teacher.name,payload.name);
+ assert.equal((await (await request('/teachers')).json()).teachers.filter(r=>r.user_id===person.user_id).length,1);
+ assert.equal((await request('/teachers',{method:'POST',data:payload})).status,409);
+ assert.equal((await request('/teachers/'+person.user_id,{method:'PATCH',data:{...payload,version:person.version,test_access:true}})).status,400);
+ assert.equal((await request('/teachers/'+person.user_id,{method:'PATCH',data:{...payload,version:person.version,status:'verified',checked:true}})).status,400);
+ const updated=await request('/teachers/'+person.user_id,{method:'PATCH',data:{...payload,version:person.version,notes:'Complementação pendente'}});assert.equal(updated.status,200);person=(await updated.json()).teacher;
+ assert.equal((await request('/teachers/'+person.user_id,{method:'PATCH',data:{...payload,version:1}})).status,409);
+ const linked=await request('/teachers/'+person.user_id,{method:'PATCH',data:{...payload,version:person.version,email:'draft-teacher@example.test'}});assert.equal(linked.status,200);const ready=(await linked.json()).teacher;
+ assert.equal(ready.user_id,person.user_id);assert.equal(ready.email,'draft-teacher@example.test');assert.equal(ready.status,'pending');assert.equal(ready.test_access,false);assert.equal((await store.members()).length,before+1);
+ assert.equal((await request('/teachers/'+person.user_id,{method:'PATCH',data:{...payload,version:ready.version}})).status,400);
+});

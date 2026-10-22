@@ -1,6 +1,6 @@
 import {createHash,randomUUID} from 'node:crypto';
 import sharp from 'sharp';
-import {fail,validateStudent} from './portal-domain.mjs';
+import {fail,validateStudent,ageAt} from './portal-domain.mjs';
 
 const normalized=s=>s.normalize('NFD').replace(/\p{Diacritic}/gu,'').toLowerCase().trim().replace(/\s+/g,' ');
 const text=(v,max)=>typeof v==='string'&&v.trim().length>=1&&v.length<=max&&!/[\x00-\x1f\x7f]/.test(v);
@@ -18,6 +18,7 @@ export function registrationDrafts({db,get,all,run,tx,requireRole,audit,upload,r
   });
  }
  return {
+  async studentDraftDirectory(actor){requireRole(actor,['admin','secretary']);return all("SELECT id,student_name AS name,birth_date,unit FROM registrations WHERE source='staff_draft' AND status IN ('pending','needs_info') AND student_id IS NULL ORDER BY student_name,id").map(r=>({...r,age:ageAt(r.birth_date),status:'incomplete',registration_id:r.id}));},
   async importRegistrationDrafts(actor,p){
    requireRole(actor,['admin']);
    if(!p||!['amavale','valparaiso','vale-do-carangola'].includes(p.unit)||!Array.isArray(p.rows)||!p.rows.length||p.rows.length>50)fail('Selecione o núcleo e um lote de 1 a 50 candidatos.');
