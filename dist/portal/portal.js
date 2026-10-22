@@ -25,7 +25,7 @@ async function openWorkspace(){me=await api('/me');document.body.dataset.portalR
 $('verify-code').addEventListener('submit',action(async()=>{const p=await api('/auth/verify',{method:'POST',data:{email:loginEmail,code:$('code').value.trim()}});token=p.access_token;sessionCache=await sessionCacheReady;sessionCache.save(p);$('code').value='';await openWorkspace()}));
 async function load(){const directory=['teacher','psychologist','social_worker'].includes(me.role)?{students:[],drafts:[]}:await api('/students');students=directory.students;studentDrafts=directory.drafts||[];renderStudents();if(['admin','secretary'].includes(me.role))await loadMembers();document.dispatchEvent(new Event('portal:loaded'))}
 function renderStudents(){
- const unitOf=s=>s.unit||({UND1:'amavale',UND2:'valparaiso',UND3:'vale-do-carangola'}[s.id.slice(0,4)]),names=scopeUnitNames(),staff=['admin','secretary'].includes(me?.role),directory=staff?students.concat(typeof studentDrafts==='undefined'?[]:studentDrafts):students;
+ const unitOf=s=>s.unit||({UND1:'amavale',UND2:'valparaiso',UND3:'vale-do-carangola'}[s.id.slice(0,4)]),names=scopeUnitNames(),staff=['admin','secretary'].includes(me?.role),directory=(staff?students.concat(typeof studentDrafts==='undefined'?[]:studentDrafts):students).filter(s=>!staff||names[unitOf(s)]);
  let select=$('student-unit-filter');
  if(staff&&!select){
   const wrap=el('div',undefined,{id:'student-directory-tools',class:'admin-card'});wrap.append(el('label','Núcleo dos alunos',{for:'student-unit-filter'}));select=el('select',undefined,{id:'student-unit-filter'});
@@ -37,8 +37,10 @@ function renderStudents(){
   }));wrap.append(candidates,el('p','',{id:'student-directory-count',role:'status','aria-live':'polite'}));
   (document.querySelector('label[for="search"]')||$('search')).before(wrap);select.addEventListener('change',()=>{if($('detail')){$('detail').hidden=true;$('detail').replaceChildren();}renderStudents()});
  }
+ if(staff&&select&&!$('student-unit-cards')){const cards=el('div',undefined,{id:'student-unit-cards',class:'student-unit-cards',role:'group','aria-label':'Escolher núcleo dos alunos'});select.parentElement.prepend(el('h3','Escolha um núcleo'),cards);}
  let selected=select?.value||'';
  if(select){if(!names[selected])selected=Object.keys(names).length===1?Object.keys(names)[0]:'';select.replaceChildren(el('option','Todos os núcleos autorizados ('+directory.length+')',{value:''}));for(const [id,label]of Object.entries(names))select.append(el('option',label+' ('+directory.filter(s=>unitOf(s)===id).length+')',{value:id}));select.value=selected;}
+ const cards=$('student-unit-cards');if(cards){cards.replaceChildren();for(const [unit,label]of Object.entries(names)){const rows=directory.filter(s=>unitOf(s)===unit),pending=rows.filter(s=>s.registration_id).length,b=el('button',undefined,{type:'button',class:'student-unit-card','data-unit':unit,'aria-pressed':String(selected===unit),'aria-controls':'students'});b.append(el('strong',label),el('span',rows.length+' cadastro(s)'),el('small',pending?pending+' para completar com as famílias':'Consultar fichas deste núcleo'));b.addEventListener('click',()=>{select.value=unit;select.dispatchEvent(new Event('change',{bubbles:true}));});cards.append(b);}if(Object.keys(names).length>1){const all=el('button','Ver todos os núcleos',{type:'button',class:'secondary','aria-pressed':String(!selected),'aria-controls':'students'});all.addEventListener('click',()=>{select.value='';select.dispatchEvent(new Event('change',{bubbles:true}));});cards.append(all);}}
  const normalize=v=>v.normalize('NFD').replace(/\p{Diacritic}/gu,'').toLocaleLowerCase('pt-BR'),q=normalize($('search').value.trim()),scoped=directory.filter(s=>!selected||unitOf(s)===selected),shown=scoped.filter(s=>normalize(s.name+' '+s.id).includes(q));
  $('students').replaceChildren();
  for(const [unit,label]of Object.entries(names)){

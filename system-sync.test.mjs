@@ -13,7 +13,7 @@ async function fixture(t){
 }
 test('Sincronização: revisão privada, estável nas leituras e persistente após reinício',async t=>{
  const f=await fixture(t),first=await f.revision(),token=await f.login(f.admin.email);assert.equal(await f.revision(),first);
- const response=await f.request(token),body=await response.json();assert.equal(response.status,200);assert.equal(response.headers.get('Cache-Control'),'no-store');assert.deepEqual(Object.keys(body).sort(),['poll_after_seconds','revision']);assert.match(body.revision,/^[0-9a-f]{64}$/);
+ const response=await f.request(token),body=await response.json();assert.equal(response.status,200);assert.equal(response.headers.get('Cache-Control'),'no-store');assert.deepEqual(Object.keys(body).sort(),['poll_after_seconds','release','revision']);assert.match(body.release,/^[0-9a-f]{12}$/);assert.match(body.revision,/^[0-9a-f]{64}$/);
  await f.store.students();await f.store.auditLog();assert.equal(await f.revision(),first);
  const g=await f.store.provision('guardian@example.test','guardian');assert.notEqual(await f.revision(),first);const after=await f.revision();assert.equal((await f.request(await f.login(g.email))).status,200);assert.equal(await f.revision(),after);
  f.reopen();assert.equal(await f.revision(),after);assert.equal((await f.request('invalid')).status,401);

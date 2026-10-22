@@ -13,6 +13,15 @@ test('Alunos: secretaria recebe somente seu núcleo e estado vazio orienta concl
  const f=fixture(t,'secretary',['amavale']),select=f.w.$('student-unit-filter');assert.equal(select.options.length,2);assert.equal(select.value,'amavale');assert.doesNotMatch(f.w.$('students').textContent,/Valparaíso|Carangola/);
  f.w.students=[];f.render();assert.match(f.w.$('students').textContent,/Consulte Candidatos/);assert.match(select.options[1].textContent,/Amavale \(0\)/);
 });
+
+test('Cartões de núcleo filtram cadastros, mostram pendências e respeitam a secretaria local',t=>{
+ const f=fixture(t),w=f.w;w.studentDrafts=[{id:'draft',registration_id:'draft',name:'Criança Fictícia',unit:'vale-do-carangola',status:'incomplete'}];f.render();
+ assert.equal(w.$('student-unit-cards').querySelectorAll('[data-unit]').length,3);
+ const card=w.$('student-unit-cards').querySelector('[data-unit="vale-do-carangola"]');assert.match(card.textContent,/2 cadastro/);assert.match(card.textContent,/1 para completar/);card.click();
+ assert.equal(w.$('student-unit-filter').value,'vale-do-carangola');assert.equal(w.$('student-unit-cards').querySelector('[data-unit="vale-do-carangola"]').getAttribute('aria-pressed'),'true');assert.doesNotMatch(w.$('students').textContent,/Joana|UND1/);
+ w.$('student-unit-cards').querySelector('.secondary').click();assert.equal(w.$('students').querySelectorAll('section').length,3);
+ const scoped=fixture(t,'secretary',['amavale']);assert.equal(scoped.w.$('student-unit-cards').querySelectorAll('[data-unit]').length,1);assert.doesNotMatch(scoped.w.$('student-unit-cards').textContent,/Valparaíso|Carangola/);
+});
 test('Alunos: navegação mantém filtros dentro da seção correta, inclusive no primeiro carregamento',t=>{
  const f=fixture(t),w=f.w,workspace=w.document.createElement('section');workspace.id='workspace';workspace.innerHTML='<div><p id="identity"></p></div><nav id="admin-nav"></nav><section id="dashboard-area"></section>';
  const original=w.document.querySelector('section');workspace.append(...original.childNodes);w.document.body.append(workspace);original.remove();

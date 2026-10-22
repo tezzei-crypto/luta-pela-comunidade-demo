@@ -1,3 +1,4 @@
+import {portalRelease} from './portal-release.mjs';
 import {handleBackups} from './backup-handler.mjs';
 import {registrationReadiness} from './registration-readiness.mjs';
 import {handleQuickIntake} from './quick-intake-handler.mjs';
@@ -63,7 +64,7 @@ export async function handlePortal(req,env=process.env,injectedStore){
   const quickResponse=await handleQuickIntake({req,route,method,url,store,actor});if(quickResponse)return quickResponse;
   const backupResponse=await handleBackups({req,route,method,store,actor,requireRole});if(backupResponse)return backupResponse;
   const editorResponse=await handleSiteEditor({req,route,method,url,store,actor,requireRole});if(editorResponse)return editorResponse;
-  if(route==='/sync'&&method==='GET')return json(await store.systemRevision(actor));
+  if(route==='/sync'&&method==='GET')return json({...await store.systemRevision(actor),release:portalRelease(env)});
   if(route==='/diagnostics'&&method==='GET'){requireRole('admin');return json(store.diagnosticEvents(actor,{support_id:url.searchParams.get('support_id')||'',kind:url.searchParams.get('kind')||'',page:Number(url.searchParams.get('page')||0)}));}
   if(route==='/diagnostics/settings'&&method==='PATCH'){requireRole('admin');return json({settings:store.configureDiagnostics(actor,await body())});}
 

@@ -1,3 +1,4 @@
+import {portalRelease,versionPortalHtml} from './portal-release.mjs';
 import {consumePortalBudget} from './portal-rate-budget.mjs';
 import {Readable} from 'node:stream';
 import {pipeline} from 'node:stream/promises';
@@ -82,7 +83,7 @@ async function serveRequest(req,res){
   // One shared entry point also covers staff portals that do not load app.js.
   const page=url.pathname.replace(/index\.html$/,'');let source=await fs.promises.readFile(file,'utf8');
   if(portalConfigured(process.env)&&editorPages.some(p=>p.page===page)){source=createStore(process.env).editorPublicHtml(page);res.setHeader('Cache-Control','no-store');}
-  const html=withSocialPreview(source,page);res.end(html.replace(/<\/body>/i,'<script src="/contact-widget.js" defer></script>'+(/^\/(administracao|portal|professor|psicologia|assistencia-social)\//.test(url.pathname)?'<script src="/portal/diagnostics.js" defer></script><script src="/portal/site-editor.js" defer></script><script src="/portal/backups.js" defer></script><script src="/portal/operations.js" defer></script><script src="/portal/class-review.js" defer></script>':'')+'</body>'));
+  const html=withSocialPreview(source,page),rendered=html.replace(/<\/body>/i,'<script src="/contact-widget.js" defer></script>'+(/^\/(administracao|portal|professor|psicologia|assistencia-social)\//.test(url.pathname)?'<script src="/portal/diagnostics.js" defer></script><script src="/portal/site-editor.js" defer></script><script src="/portal/backups.js" defer></script><script src="/portal/operations.js" defer></script><script src="/portal/class-review.js" defer></script>':'')+'</body>');res.end(/^\/(administracao|portal|professor|psicologia|assistencia-social)\//.test(url.pathname)?versionPortalHtml(rendered,portalRelease(process.env)):rendered);
  }else fs.createReadStream(file).pipe(res);
 }
 http.createServer((req,res)=>{const diagnostic=observeRequest(req,res,process.env);serveRequest(req,res).catch(error=>diagnostic.fail(error))}).listen(port,process.env.HOST||'0.0.0.0',function(){console.log(`Local: http://127.0.0.1:${this.address().port}`)});
