@@ -56,3 +56,7 @@ test('Chamada móvel: sincronização recarrega chamada aberta sem devolver prof
 test('Chamada móvel: sincronização remove dados da chamada quando autorização é revogada',async t=>{
  const f=await syncFixture(t,true);assert.equal(f.w.document.querySelector('#class-detail').hidden,true);assert.equal(f.w.document.querySelector('#class-detail').textContent,'');assert.match(f.w.document.body.dataset.notice,/revogado/);
 });
+
+test('Chamada móvel inclui protocolo de ficha pendente e salva sem exigir aprovação',async t=>{
+ const f=ui(t);Object.assign(f.rows[0],{id:'5dabcd33-3d96-435a-846e-8e59073ef6a3',provisional:1,enrollment_status:'incomplete'});await f.run("classDetail('class-a')");const row=f.w.document.querySelector('.attendance-person');assert.match(row.textContent,/Dados pendentes.*registrada normalmente/);assert.equal(row.querySelectorAll('.attendance-choice').length,4);row.querySelector('[data-status=present]').click();f.w.document.querySelector('.attendance-form').dispatchEvent(new f.w.Event('submit',{cancelable:true}));await new Promise(r=>setImmediate(r));assert.equal(f.rows[0].status,'present');assert.equal(f.requests.find(r=>r.method==='POST').data.rows[0].id,f.rows[0].id);
+});

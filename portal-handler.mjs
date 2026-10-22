@@ -127,7 +127,7 @@ export async function handlePortal(req,env=process.env,injectedStore){
   if(route==='/classes'&&method==='POST'){requireRole('admin','secretary','teacher');return json({lesson:await store.createClass(actor,await body())},201)}
   if(route==='/attendance.csv'&&method==='GET'){
    requireRole('admin','secretary','teacher');const rows=await store.attendanceExport(actor,url.searchParams.get('unit'),url.searchParams.get('from'),url.searchParams.get('to'));
-   return new Response(csv(rows,['date','time','class','unit','student_id','name','status','version','updated_at','updated_by','updated_by_name']),{headers:{...privateHeaders,'Content-Type':'text/csv; charset=utf-8','Content-Disposition':'attachment; filename="presencas.csv"'}});
+   return new Response(csv(rows,['date','time','class','unit','student_id','name','status','version','updated_at','updated_by','updated_by_name','record_type']),{headers:{...privateHeaders,'Content-Type':'text/csv; charset=utf-8','Content-Disposition':'attachment; filename="presencas.csv"'}});
   }
   const historyMatch=route.match(/^\/classes\/([0-9a-f-]{36})\/attendance-history$/i);if(historyMatch&&method==='GET'){requireRole('admin','secretary','teacher');return json(await store.attendanceHistory(actor,historyMatch[1],url.searchParams.get('before')));}
   const cancelMatch=route.match(/^\/classes\/([0-9a-f-]{36})\/cancellation$/i);if(cancelMatch&&method==='POST')return json({lesson:await store.cancelClass(actor,cancelMatch[1],await body()),message:'Situação da aula atualizada.'});

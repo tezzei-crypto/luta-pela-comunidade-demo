@@ -19,7 +19,7 @@ export function classEvidence({db,get,all,run,tx,requireRole,audit,objectPath,le
  CREATE TABLE IF NOT EXISTS class_photo_history(id INTEGER PRIMARY KEY,class_id TEXT NOT NULL REFERENCES classes(id),actor TEXT NOT NULL REFERENCES members(user_id),action TEXT NOT NULL,note TEXT NOT NULL,created_at TEXT NOT NULL);`);
  const hash=x=>createHash('sha256').update(x).digest('hex');
  const lesson=(actor,id)=>{const c=get('SELECT * FROM classes WHERE id=?',id);if(!c)fail('Aula não localizada.',404);lessonAccess(actor,c);return c};
- const fingerprint=id=>hash(JSON.stringify(all('SELECT student_id,status,version FROM attendance WHERE class_id=? ORDER BY student_id',id)));
+ const fingerprint=id=>hash(JSON.stringify(all('SELECT student_id,status,version FROM attendance WHERE class_id=? ORDER BY student_id',id).concat(all('SELECT registration_id AS student_id,status,version FROM registration_attendance WHERE class_id=? ORDER BY registration_id',id))));
  const state=id=>{const r=get('SELECT * FROM class_photo_checks WHERE class_id=?',id)||{version:0,status:'empty',note:'',fingerprint:''};return {...r,status:r.fingerprint&&r.fingerprint!==fingerprint(id)?'changed':r.status}};
  const writable=(actor,id)=>{const c=lesson(actor,id);if(c.cancelled||c.day>localDay())fail('A foto deve ser vinculada a uma aula realizada e não cancelada.');return c};
  const log=(actor,id,action,note='')=>{run('INSERT INTO class_photo_history(class_id,actor,action,note,created_at) VALUES(?,?,?,?,?)',id,actor,action,note,new Date().toISOString());audit(actor,'class.photo.'+action+':'+id)};

@@ -12,7 +12,7 @@ export function attendanceHistory({db,get,all,run,requireRole,lessonAccess}){
   UNIQUE(class_id,student_id,version));
   CREATE INDEX IF NOT EXISTS attendance_changes_class ON attendance_changes(class_id,id);`);
  const identity=actor=>get("SELECT m.role,COALESCE(NULLIF(a.name,''),NULLIF(t.name,''),m.email) AS name FROM members m LEFT JOIN administrative_profiles a USING(user_id) LEFT JOIN teacher_profiles t USING(user_id) WHERE m.user_id=?",actor);
- const append=(classId,studentId,previous,status,version,actor,at,kind)=>{const who=identity(actor);run('INSERT INTO attendance_changes(class_id,student_id,previous_status,status,version,actor,actor_name,actor_role,created_at,kind) VALUES(?,?,?,?,?,?,?,?,?,?)',classId,studentId,previous,status,version,actor,who.name,who.role,at,kind)};
+ const append=(classId,studentId,previous,status,version,actor,at,kind)=>{const who=identity(actor),eventId=get('SELECT MAX(COALESCE((SELECT max(id) FROM attendance_changes),0),COALESCE((SELECT max(id) FROM registration_attendance_changes),0))+1 AS id').id;run('INSERT INTO attendance_changes(id,class_id,student_id,previous_status,status,version,actor,actor_name,actor_role,created_at,kind) VALUES(?,?,?,?,?,?,?,?,?,?,?)',eventId,classId,studentId,previous,status,version,actor,who.name,who.role,at,kind)};
  if(!migrated){db.exec('BEGIN IMMEDIATE');try{for(const a of all('SELECT * FROM attendance WHERE NOT EXISTS(SELECT 1 FROM attendance_changes h WHERE h.class_id=attendance.class_id AND h.student_id=attendance.student_id AND h.version=attendance.version)'))append(a.class_id,a.student_id,null,a.status,a.version,a.updated_by,a.updated_at,'baseline');run("INSERT INTO auth_migrations VALUES('attendance_history_baseline_v1')");db.exec('COMMIT')}catch(e){db.exec('ROLLBACK');throw e}}
  return {
   recordAttendanceChange(actor,lesson,row,old){requireRole(actor,['admin','secretary','teacher']);append(lesson.id,row.id,old?.status||'unmarked',row.status,row.version+1,actor,new Date().toISOString(),'change')},
@@ -20,7 +20,7 @@ export function attendanceHistory({db,get,all,run,requireRole,lessonAccess}){
    const lesson=get('SELECT * FROM classes WHERE id=?',id);if(!lesson)fail('Aula não localizada.',404);lessonAccess(actor,lesson);
    const cursor=before===undefined||before===null?Number.MAX_SAFE_INTEGER:Number(before);
    if(!Number.isSafeInteger(cursor)||cursor<=0)fail('Página do histórico inválida.');
-   const rows=all('SELECT h.*,s.name AS student_name FROM attendance_changes h JOIN students s ON s.id=h.student_id WHERE h.class_id=? AND h.id<? ORDER BY h.id DESC LIMIT 101',id,cursor);
+   const rows=all("SELECT * FROM (SELECT h.*,s.name AS student_name FROM attendance_changes h JOIN students s ON s.id=h.student_id WHERE h.class_id=? UNION ALL SELECT h.id,h.class_id,h.registration_id AS student_id,h.previous_status,h.status,h.version,h.actor,h.actor_name,h.actor_role,h.created_at,h.kind,cr.name AS student_name FROM registration_attendance_changes h JOIN class_registration_roster cr ON cr.class_id=h.class_id AND cr.registration_id=h.registration_id WHERE h.class_id=?) WHERE id<? ORDER BY id DESC LIMIT 101",id,id,cursor);
    return {changes:rows.slice(0,100),next_before:rows.length>100?rows[99].id:null};
   }
  };

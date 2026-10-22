@@ -17,9 +17,9 @@ export function operationsTools({db,get,all,run,requireRole,scope,env,transport,
   const work=day<officialStart()?[]:[...groups.map(g=>({g,c:allClasses.find(c=>c.group_id===g.id)})),...allClasses.filter(c=>!groups.some(g=>g.id===c.group_id)).map(c=>({g:{id:c.group_id,unit:c.unit,label:c.label,start_time:c.time},c}))];
   const people=new Map();let registered=0,visitors=0,childVisits=0;
   const lessons=work.map(({g,c})=>{
-   const enrolled=c?all("SELECT s.id,s.birth_date,COALESCE(a.status,'unmarked') AS status FROM (SELECT student_id FROM class_students WHERE class_id=? UNION SELECT student_id FROM attendance WHERE class_id=?) roster JOIN students s ON s.id=roster.student_id LEFT JOIN attendance a ON a.class_id=? AND a.student_id=roster.student_id",c.id,c.id,c.id):[];
+   const enrolled=c?all("SELECT s.id,s.birth_date,COALESCE(a.status,'unmarked') AS status FROM (SELECT student_id FROM class_students WHERE class_id=? UNION SELECT student_id FROM attendance WHERE class_id=?) roster JOIN students s ON s.id=roster.student_id LEFT JOIN attendance a ON a.class_id=? AND a.student_id=roster.student_id",c.id,c.id,c.id).concat(all('SELECT id,birth_date,status,resolved_student_id,provisional FROM provisional_class_roster WHERE class_id=?',c.id)):[];
    // Linked visitors and enrolled students share one identity in this lesson and in the daily total.
-   const roster=new Map();for(const s of enrolled.filter(s=>s.status==='present'))roster.set(s.id,{kind:'registered',age:ageAt(s.birth_date,new Date(day+'T12:00:00Z'))});
+   const roster=new Map();for(const s of enrolled.filter(s=>s.status==='present'))roster.set(s.resolved_student_id||s.id,{kind:s.provisional?'visitor':'registered',age:ageAt(s.birth_date,new Date(day+'T12:00:00Z'))});
    if(c)for(const v of all("SELECT q.id,q.student_id,q.age,q.created_at,s.birth_date FROM visitor_attendance a JOIN quick_intakes q ON q.id=a.intake_id LEFT JOIN students s ON s.id=q.student_id WHERE a.class_id=? AND a.present=1",c.id)){const key=v.student_id||'visitor:'+v.id;if(!roster.has(key))roster.set(key,{kind:'visitor',age:v.birth_date?ageAt(v.birth_date,new Date(day+'T12:00:00Z')):v.age});}
    const held=c&&get('SELECT held FROM class_delivery WHERE class_id=?',c.id)?.held;
    let state=c?.cancelled?'cancelled':roster.size||held?'held':'unconfirmed';

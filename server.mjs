@@ -1,3 +1,4 @@
+import {consumePortalBudget} from './portal-rate-budget.mjs';
 import {Readable} from 'node:stream';
 import {pipeline} from 'node:stream/promises';
 import {observeRequest,handleClientDiagnostic} from './diagnostic-http.mjs';
@@ -52,11 +53,8 @@ async function serveRequest(req,res){
   await send(await handleMetrics(new Request(url,{method:req.method,headers:req.headers,...(!['GET','HEAD'].includes(req.method)?{body:Buffer.concat(chunks)}:{})}),process.env));return;
  }
  if(url.pathname.startsWith('/api/portal/')){
-  const now=Date.now(),auth=url.pathname.includes('/auth/'),key='portal:'+clientAddress(req,process.env)+':'+(auth?'auth':'data');
-  if(limits.size>1000)for(const [k,v]of limits)if(now-v.start>600000)limits.delete(k);
-  const entry=limits.get(key);
-  if(entry&&now-entry.start<600000&&entry.count>=(auth?20:300)){await send(Response.json({message:'Muitas tentativas. Aguarde alguns minutos.'},{status:429,headers:{'Cache-Control':'no-store'}}));return}
-  limits.set(key,entry&&now-entry.start<600000?{...entry,count:entry.count+1}:{start:now,count:1});
+  const budget=consumePortalBudget(limits,clientAddress(req,process.env),url.pathname,req.method);
+  if(!budget.allowed){await send(Response.json({message:'Muitas tentativas. Aguarde alguns minutos.'},{status:429,headers:{'Cache-Control':'no-store','Retry-After':String(budget.retryAfter)}}));return}
   const chunks=[];let size=0;
   try{
    for await(const chunk of req){size+=chunk.length;if(size>((url.pathname==='/api/portal/site-editor/media'||/^\/api\/portal\/classes\/[a-f0-9-]{36}\/photos$/i.test(url.pathname))?9*1024*1024:url.pathname.endsWith('/documents')?6*1024*1024:2*1024*1024)){res.writeHead(413,{'Content-Type':'application/json','Cache-Control':'no-store'}).end(JSON.stringify({message:'Envio acima do limite permitido.'}));return}chunks.push(chunk)}

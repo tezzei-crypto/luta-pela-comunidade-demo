@@ -37,7 +37,8 @@ export function rollcallTools({db,get,all,run,tx,requireRole,scope,audit,env,tra
    if(!old&&(!p.enabled||!g.active||!JSON.parse(g.weekdays).includes(weekday)||now<+new Date(day+'T'+g.end_time+':00-03:00')))continue;
    const c=get('SELECT * FROM classes WHERE group_id=? AND day=?',g.id,day),assigned=teachers(g);
    const roster=c?all('SELECT student_id FROM class_students WHERE class_id=?',c.id):all("SELECT gs.student_id FROM group_students gs JOIN students s ON s.id=gs.student_id WHERE gs.group_id=? AND s.status='approved'",g.id);
-   const marked=c?Number(get("SELECT count(*) AS n FROM attendance a JOIN class_students cs ON cs.class_id=a.class_id AND cs.student_id=a.student_id WHERE a.class_id=? AND a.status<>'unmarked'",c.id).n):0;
+   const provisional=c?all('SELECT id,status FROM provisional_class_roster WHERE class_id=?',c.id):all("SELECT r.id,'unmarked' AS status FROM group_registrations gr JOIN registrations r ON r.id=gr.registration_id WHERE gr.group_id=? AND r.status IN ('pending','needs_info') AND r.student_id IS NULL",g.id);roster.push(...provisional);
+   const marked=(c?Number(get("SELECT count(*) AS n FROM attendance a JOIN class_students cs ON cs.class_id=a.class_id AND cs.student_id=a.student_id WHERE a.class_id=? AND a.status<>'unmarked'",c.id).n):0)+provisional.filter(r=>r.status!=='unmarked').length;
    const status=day<officialStart()?'testing':c?.cancelled||!g.active?'cancelled':!roster.length||marked>=roster.length?'resolved':'open';
    if(!old&&status!=='open')continue;
    const reason=!assigned.length?'Turma sem professor habilitado vinculado':!c?'Chamada não aberta':'Chamada incompleta',stamp=clock.toISOString(),teacherJson=JSON.stringify(assigned.map(({user_id,name})=>({user_id,name}))),id=old?.id||randomUUID();
