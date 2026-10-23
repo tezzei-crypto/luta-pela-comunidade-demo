@@ -6,6 +6,7 @@ import {handleRegistration} from './registration-handler.mjs';import {persistReg
 import {registrationReadiness} from './registration-readiness.mjs';import {registrationNotices} from './registration-notices.mjs';
 import {completeRegistrationAttachments} from './registration-fixtures.mjs';
 import {fixtureGroup} from './school-fixtures.mjs';
+import {localDay} from './professional-tools.mjs';
 
 async function fixture(t){
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'lpc-registration-review-')),env={PORTAL_DATA_DIR:dir,PORTAL_SECRET:'fixture-only-'.repeat(4),BOOTSTRAP_ADMIN_EMAIL:'admin@example.test',PUBLIC_ORIGIN:'https://example.test',PORTAL_INTAKE_ACTIVE:'true',RESEND_API_KEY:'fake',MAIL_FROM:'test@example.test',BOOTSTRAP_STUDENTS_FILE:'',BOOTSTRAP_CONTACTS_FILE:'',BOOTSTRAP_AMAVALE_GROUPS:'false'};
@@ -71,7 +72,7 @@ test('Inscrição: vincular aluno existente conserva ID e função de equipe do 
 test('Secretaria local: foto e atestado, vínculo existente, repetição e histórico são preservados no fluxo HTTP',async t=>{
  const f=await fixture(t),sid='UND1_000011',row={...f.fields(),guardian_email:'local@example.test'};
  await f.store.import(f.admin.user_id,[{id:sid,name:row.student_name,birth_date:row.birth_date,status:'approved',height_cm:140,weight_kg:35,kimono:'M1',version:0}]);
- const original=await f.store.student(sid),group=await fixtureGroup(f.store,f.admin.user_id,'amavale',[sid]),lesson=await f.store.createClass(f.admin.user_id,{group_id:group.id,day:new Date().toISOString().slice(0,10)});
+ const original=await f.store.student(sid),group=await fixtureGroup(f.store,f.admin.user_id,'amavale',[sid]),lesson=await f.store.createClass(f.admin.user_id,{group_id:group.id,day:localDay()});
  await f.store.markAttendance(f.admin.user_id,lesson.id,[{id:sid,status:'present',version:0}]);const history=await f.store.attendanceHistory(f.admin.user_id,lesson.id);
  const oldDoc=randomUUID(),key=sid+'/'+oldDoc+'.pdf';await f.store.upload(key,Buffer.from('%PDF-1.7 HISTORICO FICTICIO'));await f.store.addDocument({id:oldDoc,student_id:sid,kind:'report_card',object_path:key,original_name:'historico-ficticio.pdf',mime:'application/pdf',size:24,created_by:f.admin.user_id});
  await persistRegistration(f.store,row,completeRegistrationAttachments().slice(0,2));
