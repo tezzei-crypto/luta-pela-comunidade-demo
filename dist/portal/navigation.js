@@ -1,5 +1,6 @@
 'use strict';
 const panelItems=[
+ ['finance-area','Financeiro e auditoria',['admin']],
  ['dashboard-area','Visão geral',['admin','secretary']],['students-area','Alunos',['admin','secretary','guardian']],
  ['operations-area','Atividades do projeto',['admin','secretary']],['class-review-area','Conferências das aulas',['admin','secretary']],['quick-intakes-area','Matrículas pendentes',['admin','secretary']],
  ['registrations-area','Candidatos',['admin','secretary']],['teacher-area','Professores',['admin','secretary']],['monitors-area','Monitores',['admin','secretary']],['workforce-area','Frequência da equipe',['admin','secretary']],

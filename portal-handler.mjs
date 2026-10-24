@@ -1,4 +1,5 @@
 import {portalRelease} from './portal-release.mjs';
+import {handleFinance} from './finance-handler.mjs';
 import {handleBackups} from './backup-handler.mjs';
 import {registrationReadiness} from './registration-readiness.mjs';
 import {handleQuickIntake} from './quick-intake-handler.mjs';
@@ -61,6 +62,7 @@ export async function handlePortal(req,env=process.env,injectedStore){
   const administrativeUnits=staff&&store.administrativeScope?await store.administrativeScope(actor):undefined;
   if(role==='secretary'&&!store.forActor)fail('Separação por núcleo indisponível. Procure a administração.',503);
   if(store.forActor)store=store.forActor(actor);
+  const financeResponse=await handleFinance({req,route,method,store,actor,requireRole});if(financeResponse)return financeResponse;
   const quickResponse=await handleQuickIntake({req,route,method,url,store,actor});if(quickResponse)return quickResponse;
   const backupResponse=await handleBackups({req,route,method,store,actor,requireRole});if(backupResponse)return backupResponse;
   const editorResponse=await handleSiteEditor({req,route,method,url,store,actor,requireRole});if(editorResponse)return editorResponse;

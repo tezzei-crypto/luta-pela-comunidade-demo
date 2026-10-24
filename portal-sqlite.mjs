@@ -1,4 +1,5 @@
 import {quotaAwareTransport} from './resend-quota.mjs';
+import {financeTools} from './finance-tools.mjs';
 import {registrationDrafts} from './registration-drafts.mjs';
 import {projectPeriod} from './project-period.mjs';
 import {backupTools} from './backup-tools.mjs';
@@ -223,6 +224,7 @@ export function createSqliteStore(env,{transport=fetch}={}){
    return limited[name](...args);
   }});
  };
+ Object.assign(api,financeTools({db,get,all,run,tx,requireRole,audit,objectPath}));
  Object.assign(api,registrationDrafts({db,get,all,run,tx,requireRole,audit,upload:api.upload,removeObject:api.removeObject}));
  Object.assign(api,quickIntake({db,get,all,run,tx,requireRole,scope,audit,project,emailAllowed,requireUnit:teaching.requireUnit,env,transport}));
  Object.assign(api,registrationDocumentNotices({db,get,all,run,tx,requireRole,scope,env,transport,emailAllowed}));
