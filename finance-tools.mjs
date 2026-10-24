@@ -12,6 +12,7 @@ export function financeTools({db,get,all,run,tx,requireRole,audit,objectPath}){
  CREATE TABLE IF NOT EXISTS finance_documents(id TEXT PRIMARY KEY,name TEXT NOT NULL,mime TEXT NOT NULL,sha256 TEXT NOT NULL UNIQUE,size INTEGER NOT NULL,object_key TEXT NOT NULL UNIQUE,created_by TEXT NOT NULL,created_at TEXT NOT NULL);
  CREATE UNIQUE INDEX IF NOT EXISTS finance_invoice_key ON finance_records(json_extract(payload,'$.fiscal_key')) WHERE kind='invoice' AND json_extract(payload,'$.fiscal_key')!='';
  CREATE UNIQUE INDEX IF NOT EXISTS finance_payment_ref ON finance_records(json_extract(payload,'$.transaction_ref')) WHERE kind IN ('payment','income') AND json_extract(payload,'$.transaction_ref')!='';`);
+ if(!all('PRAGMA table_info(finance_documents)').some(c=>c.name==='category'))db.exec("ALTER TABLE finance_documents ADD COLUMN category TEXT NOT NULL DEFAULT 'other'");
  const admin=a=>requireRole(a,['admin']);
  const rows=()=>all('SELECT * FROM finance_records ORDER BY created_at,id').map(r=>({...r,data:JSON.parse(r.payload),payload:undefined}));
  function validate(kind,p){
@@ -65,18 +66,21 @@ export function financeTools({db,get,all,run,tx,requireRole,audit,objectPath}){
   audit(actor,'finance.'+(old?'revise:':'create:')+id);return {id,version:v,repeated:false};
  }
  function doc(actor,d){
+  const category=d.category||'other';if(!['invoice','payment','income','bank_statement','authorization','delivery','other','report'].includes(category))fail('Categoria de documento inválida.');
   if(!idOk(d.id)||!text(d.name,220)||!['application/pdf','application/xml','image/jpeg','image/png','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'].includes(d.mime)||typeof d.base64!=='string'||d.base64.length>8*1024*1024||!/^[a-f0-9]{64}$/.test(d.sha256||''))fail('Documento inválido.');
   const bytes=Buffer.from(d.base64,'base64');if(!bytes.length||bytes.length>6*1024*1024||hash(bytes)!==d.sha256)fail('Conteúdo ou hash do documento inválido.');
   const isPdf=bytes.subarray(0,5).toString()==='%PDF-',isXml=/^\s*(<\?xml|<nfeProc|<NFe)/.test(bytes.toString('utf8',0,150)),isJpg=bytes[0]===255&&bytes[1]===216,isPng=bytes.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])),isZip=bytes[0]===80&&bytes[1]===75;
   if(!(d.mime==='application/pdf'&&isPdf||d.mime==='application/xml'&&isXml||d.mime==='image/jpeg'&&isJpg||d.mime==='image/png'&&isPng||d.mime.includes('spreadsheetml')&&isZip))fail('Formato do documento não confere.');
-  const old=get('SELECT * FROM finance_documents WHERE id=? OR sha256=?',d.id,d.sha256);
-  if(old){if(old.id!==d.id||old.sha256!==d.sha256)fail('Documento ou identificador já cadastrado.',409);return {id:old.id,repeated:true}}
+  const sameId=get('SELECT * FROM finance_documents WHERE id=?',d.id);
+  if(sameId&&sameId.sha256!==d.sha256)fail('Identificador de documento já cadastrado com outro conteúdo.',409);
+  const old=sameId||get('SELECT * FROM finance_documents WHERE sha256=?',d.sha256);
+  if(old)return {id:old.id,repeated:true};
   const key='finance/'+d.sha256,full=objectPath(key);fs.mkdirSync(objectPath('finance'),{recursive:true,mode:0o700});
   if(fs.existsSync(full)){if(hash(fs.readFileSync(full))!==d.sha256)fail('Arquivo existente divergente.',409)}else fs.writeFileSync(full,bytes,{flag:'wx',mode:0o600});
-  run('INSERT INTO finance_documents VALUES(?,?,?,?,?,?,?,?)',d.id,d.name,d.mime,d.sha256,bytes.length,key,actor,new Date().toISOString());audit(actor,'finance.document:'+d.id);return {id:d.id,repeated:false};
+  run('INSERT INTO finance_documents(id,name,mime,sha256,size,object_key,created_by,created_at,category) VALUES(?,?,?,?,?,?,?,?,?)',d.id,d.name,d.mime,d.sha256,bytes.length,key,actor,new Date().toISOString(),category);audit(actor,'finance.document:'+d.id);return {id:d.id,repeated:false};
  }
  return {
-  financeList:async actor=>{admin(actor);audit(actor,'finance.read');const records=rows(),invoices=records.filter(r=>r.kind==='invoice'&&r.data.disposition==='current'),payments=records.filter(r=>r.kind==='payment'),sum=a=>a.reduce((n,r)=>n+r.data.amount_cents,0);return {records,documents:all('SELECT id,name,mime,sha256,size,created_at FROM finance_documents ORDER BY id'),history:all('SELECT h.*,m.email AS actor_email FROM finance_history h LEFT JOIN members m ON m.user_id=h.actor ORDER BY seq DESC').map(r=>({...r,data:JSON.parse(r.payload),payload:undefined})),totals:{budget_cents:sum(records.filter(r=>r.kind==='budget')),invoice_cents:sum(invoices),payment_cents:sum(payments),income_cents:sum(records.filter(r=>r.kind==='income')),bank_balance_cents:null},generated_at:new Date().toISOString()};},
+  financeList:async actor=>{admin(actor);audit(actor,'finance.read');const records=rows(),invoices=records.filter(r=>r.kind==='invoice'&&r.data.disposition==='current'),payments=records.filter(r=>r.kind==='payment'),sum=a=>a.reduce((n,r)=>n+r.data.amount_cents,0);return {records,documents:all('SELECT id,name,mime,sha256,size,category,created_at FROM finance_documents ORDER BY id'),history:all('SELECT h.*,m.email AS actor_email FROM finance_history h LEFT JOIN members m ON m.user_id=h.actor ORDER BY seq DESC').map(r=>({...r,data:JSON.parse(r.payload),payload:undefined})),totals:{budget_cents:sum(records.filter(r=>r.kind==='budget')),invoice_cents:sum(invoices),payment_cents:sum(payments),income_cents:sum(records.filter(r=>r.kind==='income')),bank_balance_cents:null},generated_at:new Date().toISOString()};},
   financeSave:async(actor,p)=>{admin(actor);if(!p||typeof p!=='object'||Array.isArray(p))fail('Registro financeiro inválido.');try{return tx(()=>save(actor,p))}catch(e){if(/UNIQUE constraint/.test(e.message))fail('Chave fiscal ou transação já cadastrada.',409);throw e}},
   financeDocument:async(actor,d)=>{admin(actor);if(!d||typeof d!=='object')fail('Documento inválido.');return tx(()=>doc(actor,d))},
   financeImport:async(actor,p)=>{admin(actor);if(!p||!Array.isArray(p.records)||p.records.length>500||p.records.some(r=>!r||typeof r!=='object')||!Array.isArray(p.documents)||p.documents.length>100||p.documents.some(d=>!d||typeof d!=='object'))fail('Pacote financeiro inválido.');try{return tx(()=>{const documents=p.documents.map(d=>doc(actor,d));const records=p.records.map(r=>save(actor,r,true));return {created:records.filter(r=>!r.repeated).length,repeated:records.filter(r=>r.repeated).length,documents:documents.length}})}catch(e){if(/UNIQUE constraint/.test(e.message))fail('Chave fiscal ou transação já cadastrada.',409);throw e}},

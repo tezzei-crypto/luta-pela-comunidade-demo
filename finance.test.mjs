@@ -25,6 +25,7 @@ test('Financeiro: importação atômica, repetição, centavos, revisão e persi
  r=await store.financeList(a);assert.equal(r.totals.payment_cents,7000);assert.equal(r.history.length,4);assert.equal(r.history.find(h=>h.record_id==='payment'&&h.version===1).data.amount_cents,6000);
  const other=createSqliteStore(env);assert.equal((await other.financeList(a)).totals.payment_cents,7000);other.close();
  assert.deepEqual((await store.financeDownload(a,'DOC-TEST')).bytes,pdf);
+ const duplicate=await store.financeDocument(a,{...evidence,id:'another-upload-id',category:'invoice'});assert.equal(duplicate.id,'DOC-TEST');assert.equal(duplicate.repeated,true);assert.equal((await store.financeList(a)).documents.length,1);
 });
 test('Financeiro: duplicatas, integridade, referências e rollback não geram lançamentos',async t=>{
  const {store,admin}=await fixture(t),a=admin.user_id;await store.financeImport(a,{documents:[evidence],records:[budget,invoice,payment]});
