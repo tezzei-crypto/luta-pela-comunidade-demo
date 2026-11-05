@@ -91,6 +91,8 @@ async function serveRequest(req,res){
   // One shared entry point also covers staff portals that do not load app.js.
   const page=url.pathname.replace(/index\.html$/,'');let source=await fs.promises.readFile(file,'utf8');
   if(portalConfigured(process.env)&&editorPages.some(p=>p.page===page)){source=createStore(process.env).editorPublicHtml(page);res.setHeader('Cache-Control','no-store');}
+  // Append legal links after CMS rendering so existing published pages expose them too.
+  if(source.includes('class="footer-main"'))source=source.replace(/(<footer\b[^>]*>[\s\S]*?<nav\b[^>]*>[\s\S]*?)(<\/nav>)/i,'$1<a href="/privacidade/">Privacidade</a><a href="/exclusao-de-dados/">Exclusão de dados</a>$2');
   const html=withSocialPreview(source,page),rendered=html.replace(/<\/body>/i,'<script src="/contact-widget.js" defer></script>'+(/^\/(administracao|portal|professor|psicologia|assistencia-social)\//.test(url.pathname)?'<script src="/portal/diagnostics.js" defer></script><script src="/portal/site-editor.js" defer></script><script src="/portal/backups.js" defer></script><script src="/portal/operations.js" defer></script><script src="/portal/class-review.js" defer></script>':'')+'</body>');res.end(/^\/(administracao|portal|professor|psicologia|assistencia-social)\//.test(url.pathname)?versionPortalHtml(rendered,portalRelease(process.env)):rendered);
  }else fs.createReadStream(file).pipe(res);
 }
