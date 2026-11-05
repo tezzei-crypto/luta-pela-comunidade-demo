@@ -28,7 +28,8 @@ export function quickIntake({db,get,all,run,tx,requireRole,scope,audit,project,r
   const old=get('SELECT * FROM visitor_attendance WHERE class_id=? AND intake_id=?',c.id,r.id);
   if(!Number.isSafeInteger(version)||version!==(old?.version||0))fail('Presença alterada. Atualize a lista antes de salvar.',409);
   if(typeof present!=='boolean')fail('Presença inválida.');
-  if(present&&r.status!=='pending')fail('Pré-cadastro encerrado. Use a chamada do aluno matriculado.',409);
+  if(present&&r.registration_id&&get('SELECT 1 FROM class_registration_roster WHERE class_id=? AND registration_id=?',c.id,r.registration_id))fail('Esta ficha já está na lista desta aula. Registre a presença somente na linha do cadastro pendente.',409);
+   if(present&&r.status!=='pending')fail('Pré-cadastro encerrado. Use a chamada do aluno matriculado.',409);
   if(old&&Boolean(old.present)===present)return old;
   const now=new Date().toISOString();
   run('INSERT INTO visitor_attendance VALUES(?,?,?,?,?,?) ON CONFLICT(class_id,intake_id) DO UPDATE SET present=excluded.present,version=excluded.version,updated_by=excluded.updated_by,updated_at=excluded.updated_at',c.id,r.id,Number(present),version+1,actor,now);

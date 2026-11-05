@@ -15,6 +15,7 @@ function ui(t,html=''){
  const run=s=>vm.runInContext(s,ctx);
  run(`const $=id=>document.getElementById(id);let me={role:'admin',user_id:'admin'},chosen='';const phoneLinksReady=Promise.resolve({attachPhoneField(){}});const notice=()=>{};const scopeUnitNames=()=>({amavale:'Amavale',valparaiso:'Valparaíso'});const classUnits={amavale:'Amavale',valparaiso:'Valparaíso'};const action=fn=>async e=>{e?.preventDefault();return fn(e)};const showPanel=()=>{};const documentChecklist=()=>{};const kinds={photo:'Foto'};`);
  const p=source('portal.js');run(p.slice(p.indexOf('function el('),p.indexOf('function notice(')));run('let fieldSequence=0;'+p.slice(p.indexOf('function field('),p.indexOf('async function detail(')));
+ const details=source('student-details.js');run(details.slice(details.indexOf('function registrationFileControls('),details.indexOf('function registrationUploader(')));
  return {w,d:w.document,run,load:(file,name)=>run(fn(file,name))};
 }
 test('Auditoria: resposta antiga do resumo não substitui a data escolhida nem impede nova consulta',async t=>{

@@ -11,6 +11,7 @@ import {recordDiagnostic} from './diagnostic-http.mjs';
 import {requireRouteAccess} from './portal-permissions.mjs';
 import {handleWorkforce} from './workforce-handler.mjs';
 import {handleProfessionals} from './professional-handler.mjs';
+import {handleStudentCaseFiles} from './student-case-files.mjs';
 import {handleStudentDetails} from './student-details-handler.mjs';
 import {handleTeaching} from './teacher-handler.mjs';
 import {handleAgenda} from './agenda-handler.mjs';
@@ -83,6 +84,7 @@ export async function handlePortal(req,env=process.env,injectedStore){
   if(route==='/auth/verify'&&method==='POST')return json({access_token:session.access_token,expires_in:session.expires_in,role,email:member.email});
   if(route==='/me'&&method==='GET')return json({role,email:member.email,user_id:actor,...(['admin','secretary','teacher'].includes(role)&&store.attendanceAuthority?await store.attendanceAuthority(actor):{}),session_expires_at:user.expires_at,...(staff?{units:administrativeUnits,scope:role==='admin'?'global':'units'}:{}),...(role==='teacher'?{test_access:await store.teacherTestAccess(actor)}:{})});
   const professionals=await handleProfessionals({req,route,method,url,store,actor});if(professionals)return professionals;
+  const caseFiles=await handleStudentCaseFiles({req,route,method,store,actor});if(caseFiles)return caseFiles;
   const details=await handleStudentDetails({req,route,method,store,actor});if(details)return details;
   const teaching=await handleTeaching({route,method,req,url,store,actor});if(teaching)return teaching;
   if(route==='/dashboard'&&method==='GET'){
@@ -105,7 +107,7 @@ export async function handlePortal(req,env=process.env,injectedStore){
    const registration=await store.registration(id);if(!registration)fail('Inscrição não localizada.',404);
    if(!registrationMatch[2]&&method==='GET'){
     const {payload_hash,documents,...data}=registration;await store.audit(actor,'registration.read:'+id);
-    return json({registration:{...data,age:ageAt(data.birth_date),readiness:registrationReadiness(registration),documents:documents.map(({object_path,...d})=>d)}});
+    return json({registration:{...data,age:ageAt(data.birth_date),withdrawn_files:store.withdrawnRegistrationFiles?await store.withdrawnRegistrationFiles(actor,id):[],readiness:registrationReadiness(registration),documents:documents.map(({object_path,...d})=>d)}});
    }
    if(registrationMatch[2]==='review'&&method==='POST'){
     const p=await body();

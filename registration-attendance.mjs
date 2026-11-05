@@ -25,9 +25,10 @@ export function registrationAttendance({db,get,all,run,audit}){
  const rows=id=>all('SELECT * FROM provisional_class_roster WHERE class_id=? ORDER BY name,id',id).map(({birth_date,class_id,resolved_student_id,...row})=>row);
  return {
   rows,
-  snapshot(id,group){run("INSERT OR IGNORE INTO class_registration_roster SELECT ?,r.id,r.student_name,r.birth_date FROM group_registrations gr JOIN registrations r ON r.id=gr.registration_id WHERE gr.group_id=? AND r.source='staff_draft' AND r.status IN ('pending','needs_info') AND r.student_id IS NULL",id,group)},
+  snapshot(id,group){run("INSERT OR IGNORE INTO class_registration_roster SELECT ?,r.id,r.student_name,r.birth_date FROM group_registrations gr JOIN registrations r ON r.id=gr.registration_id WHERE gr.group_id=? AND r.source IN ('staff_draft','staff','website') AND NOT EXISTS (SELECT 1 FROM quick_intakes q WHERE q.registration_id=r.id AND q.status='pending') AND r.status IN ('pending','needs_info') AND r.student_id IS NULL",id,group)},
   mark(actor,lesson,r){
    if(!get('SELECT 1 FROM class_registration_roster WHERE class_id=? AND registration_id=?',lesson.id,r.id))fail('Pré-cadastro não pertence à lista desta aula.',403);
+   if(r.status!=='unmarked'&&get('SELECT 1 FROM visitor_attendance v JOIN quick_intakes q ON q.id=v.intake_id WHERE v.class_id=? AND q.registration_id=? AND v.present=1',lesson.id,r.id))fail('Há presença salva como visitante nesta aula. Confira a linha anterior antes de lançar outra marcação.',409);
    const old=get('SELECT * FROM registration_attendance WHERE class_id=? AND registration_id=?',lesson.id,r.id);
    if((old?.version||0)!==r.version)fail('A chamada foi alterada. Recarregue antes de salvar.',409);
    if((old?.status||'unmarked')===r.status)return;

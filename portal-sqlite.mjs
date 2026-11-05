@@ -5,6 +5,7 @@ import {projectPeriod} from './project-period.mjs';
 import {backupTools} from './backup-tools.mjs';
 import {registrationReadiness} from './registration-readiness.mjs';
 import {registrationNotices} from './registration-notices.mjs';
+import {studentCaseFiles} from './student-case-files.mjs';
 import {registrationDocumentNotices} from './registration-document-notices.mjs';
 import {quickIntake} from './quick-intake.mjs';
 import {classReview} from './class-review.mjs';
@@ -228,6 +229,7 @@ export function createSqliteStore(env,{transport=fetch}={}){
  };
  Object.assign(api,financeTools({db,get,all,run,tx,requireRole,audit,objectPath}));
  Object.assign(api,registrationDrafts({db,get,all,run,tx,requireRole,audit,upload:api.upload,removeObject:api.removeObject}));
+ Object.assign(api,studentCaseFiles({db,get,all,run,tx,requireRole,scope,audit,storage:api}));
  Object.assign(api,quickIntake({db,get,all,run,tx,requireRole,scope,audit,project,emailAllowed,requireUnit:teaching.requireUnit,env,transport}));
  Object.assign(api,registrationDocumentNotices({db,get,all,run,tx,requireRole,scope,env,transport,emailAllowed}));
  Object.assign(api,operationsTools({db,get,all,run,requireRole,scope,env,transport,emailAllowed,officialStart}));

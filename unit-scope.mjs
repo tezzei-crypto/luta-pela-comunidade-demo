@@ -69,6 +69,9 @@ export function scopedSecretaryStore(api,actor,{scope,get,all}) {
  allow('registration',id=>record('registrations',id));
  allow('registrationDocumentNotificationStatus');
  allow('manualRegistration',(_,p)=>unit(p.unit));
+ allow('withdrawnRegistrationFiles correctRegistrationFile',(_,id)=>record('registrations',id));
+ // The support store itself validates role, secretary level, unit and owner on every access.
+ allow('supportAccess listRestrictedSupport saveRestrictedSupport downloadRestrictedSupport withdrawRestrictedSupport');
  allow('saveRegistrationDraftContact',(_,id)=>record('registrations',id));
  allow('reviewRegistration registrationUpload',(_,id,p)=>{record('registrations',id);if(p?.existing_student_id)student(p.existing_student_id)});
  allow('groups classes unitRoster reports reportsExport attendanceExport workforceRoster workforceSessions workforceExport',(_,u)=>unit(u));

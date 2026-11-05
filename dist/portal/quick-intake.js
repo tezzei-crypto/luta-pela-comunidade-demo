@@ -2,7 +2,7 @@ export async function mountQuickIntake({api,el,field,action,notice},box,classId)
  const data=await api('/classes/'+classId+'/visitors');if(!box.isConnected)return;
  box.replaceChildren();box.className='quick-intake';
  const editable=data.can_write&&!data.lesson.cancelled,feedback=el('p','',{role:'status','aria-live':'polite'}),list=el('div');
- box.append(el('h3','Alunos novos e visitantes'),el('p','Pré-cadastro não é matrícula aprovada. Salvar aqui também registra presença nesta aula. A secretaria completa a ficha depois.'));
+ box.append(el('h3','Alunos novos e visitantes'),el('p','Para marcar presença não é preciso ID definitivo nem anexos. Confira primeiro a lista da turma e dos visitantes. Use o cadastro rápido só para quem veio a esta aula e ainda não aparece; ele registra presença e deixa a matrícula pendente.'));
  let requestId=crypto.randomUUID();
  const refresh=async()=>{const fresh=await api('/classes/'+classId+'/visitors');render(fresh);};
  function render(fresh){

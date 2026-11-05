@@ -102,7 +102,10 @@ async function review(id){const request=Symbol(),box=$('registration-detail');re
   contact.addEventListener('submit',action(async()=>{await api('/registrations/'+id+'/draft-contact',{method:'PATCH',data:{...Object.fromEntries(new FormData(contact)),version:r.version}});await review(id);notice('Contato salvo. Autorização e documentos precisam de conferência.')}));box.append(contact);
  }
  if(r.reason)box.append(el('p','Última decisão: '+r.reason));if(r.student_id){box.append(el('p','ID vinculado: '+r.student_id));const open=el('button','Abrir ficha do aluno aprovado');open.addEventListener('click',action(()=>detail(r.student_id)));box.append(open)}
- for(const d of r.documents){const b=el('button','Baixar '+(kinds[d.kind]||'documento'),{class:'secondary'});b.addEventListener('click',action(async()=>download(await api('/registrations/'+id+'/documents/'+d.id,{blob:true}),'inscricao-'+d.id+(d.mime==='application/pdf'?'.pdf':d.mime==='image/png'?'.png':'.jpg'))));box.append(b)}
+ registrationFileControls(box,r);
+ restrictedSupportControl(box,'registrations/'+id);
+ if(['pending','needs_info'].includes(r.status))box.append(el('p','Presença sem ID definitivo: em Turmas, horários e matrículas, selecione esta ficha nos vínculos provisórios e salve antes de abrir a chamada. Se a criança for nova e já estiver na aula, use Alunos novos e visitantes em Presença. Não use prints para preencher documentos pendentes.'));
+ if(r.status==='approved'&&r.readiness&&!r.readiness.ready)box.append(el('p','Matrícula preservada. Confira a documentação da ficha do aluno: '+r.readiness.missing.join(', ')+'.',{class:'form-error'}));
  if(r.status!=='approved'){
   registrationUploader(box,id,r);
   const form=el('form');field(form,'Decisão','decision','needs_info',{options:['admin','secretary'].includes(me.role)?{needs_info:'Solicitar complementação',approved:'Aprovar candidato e gerar ID de aluno',rejected:'Não aprovar'}:{needs_info:'Solicitar complementação',rejected:'Não aprovar'}});

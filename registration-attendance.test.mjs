@@ -15,6 +15,27 @@ async function fixture(t){
  return {db,env,dir,admin,teacher,other,guardian,local,ids,groups,day,req,open,get store(){return store},reopen(){store.close();store=createSqliteStore(env)}};
 }
 
+test('Candidatos do site e da secretaria entram na turma pelo protocolo com documentos pendentes',async t=>{
+ const f=await fixture(t);
+ // Synthetic records with the same protocol shape as a website and a staff intake.
+ f.db.prepare("UPDATE registrations SET source='website' WHERE id=?").run(f.ids[0]);
+ f.db.prepare("UPDATE registrations SET source='staff' WHERE id=?").run(f.ids[1]);
+ const g=await f.store.group(f.admin.user_id,f.groups[0].id);
+ for(const id of f.ids.slice(0,2))assert.ok(g.registrations.some(r=>r.id===id&&r.enrolled));
+ await f.store.saveGroup(f.admin.user_id,g.id,{...g,students:[],registrations:f.ids.slice(0,15)});
+ const c=await f.open(0),roster=await f.store.attendance(f.teacher.user_id,c.id);
+ for(const id of f.ids.slice(0,2)){assert.ok(roster.students.some(s=>s.id===id&&s.provisional));await f.store.markAttendance(f.teacher.user_id,c.id,[{id,status:'present',version:0}]);assert.equal((await f.store.registration(id)).student_id,null);}
+});
+test('Um visitante ligado à ficha não gera segunda linha ou segunda marcação',async t=>{
+ const f=await fixture(t),c=await f.open(0),rid=f.ids[0],q=randomUUID();
+ await f.store.quickCreate(f.teacher.user_id,{id:q,class_id:c.id,name:'Visitante Fictício',age:10});
+ f.db.prepare('UPDATE quick_intakes SET registration_id=? WHERE id=?').run(rid,q);
+ await assert.rejects(f.store.markAttendance(f.teacher.user_id,c.id,[{id:rid,status:'present',version:0}]),/visitante/);
+ assert.ok(!(await f.store.group(f.admin.user_id,f.groups[0].id)).registrations.some(r=>r.id===rid));
+ await f.store.markVisitor(f.teacher.user_id,c.id,{intake_id:q,present:false,version:1});
+ await f.store.markAttendance(f.teacher.user_id,c.id,[{id:rid,status:'present',version:0}]);
+ await assert.rejects(f.store.markVisitor(f.teacher.user_id,c.id,{intake_id:q,present:true,version:2}),/lista desta aula/);
+});
 test('Professor restrito ao Vale vê duas turmas e chama 15 e 19 crianças sem dados completos; salva, reabre e mantém autoria',async t=>{
  const f=await fixture(t),list=await (await f.req(f.teacher,'/groups?unit=vale-do-carangola')).json();assert.deepEqual(list.groups.map(g=>g.provisional_enrolled),[15,19]);assert.equal((await f.req(f.teacher,'/groups?unit=amavale')).status,403);
  for(const [i,expected]of [[0,15],[1,19]]){

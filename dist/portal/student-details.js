@@ -68,7 +68,41 @@ function documentChecklist(box,documents,registration){
  }
  box.append(area,el('p','Arquivo enviado não significa documento conferido. Confira os anexos antes de decidir a inscrição.',{class:'muted'}));
 }
-function registrationUploader(box,id,r){const form=el('form');form.append(el('h4','Anexar documentos restantes do candidato'));field(form,'Categoria do anexo','kind','photo',{options:kinds});const file=field(form,'Arquivo do candidato (PDF, JPG ou PNG, até 5 MB)','file','',{type:'file'});file.accept='.pdf,.jpg,.jpeg,.png';file.required=true;form.append(el('button','Enviar documento do candidato'));form.addEventListener('submit',action(async()=>{const data=new FormData(form);data.set('version',r.version);const p=await api('/registrations/'+id+'/documents',{method:'POST',form:data});await review(id);notice(p.message)}));box.append(form)}
+function registrationFileControls(box,r){
+ const section=el('section');section.append(el('h4','Arquivos da inscrição'));
+ const date=v=>v?new Date(v).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'}):'data não registrada';
+ function row(d,archived){
+  const name=kinds[d.kind]||'Documento',ref=d.original_name||'Arquivo sem nome original',id=d.id;
+  const card=el('div',undefined,{class:'case-file-row'});card.append(el('strong',name+' · '+ref),el('small','Arquivo '+id+' · '+date(d.created_at)+(archived?' · Retirado em '+date(d.withdrawn_at):'')));
+  if(!archived){const b=el('button','Baixar '+name,{type:'button',class:'secondary','aria-label':'Baixar '+name+': '+ref+' · '+id});b.addEventListener('click',action(async()=>download(await api('/registrations/'+r.id+'/documents/'+id,{blob:true}),'inscricao-'+id+(d.mime==='application/pdf'?'.pdf':d.mime==='image/png'?'.png':'.jpg'))));card.append(b)}
+  const details=el('details');details.append(el('summary',archived?'Restaurar este arquivo':'Retirar arquivo incorreto'),el('p',(archived?'Restaurar ':'Retirar ')+ref+' desta ficha? '+(archived?'O arquivo volta para a conferência.':'Ele deixará de aparecer entre os documentos válidos. A matrícula e a frequência serão preservadas. Você poderá restaurá-lo.')));
+  const confirm=el('button',archived?'Confirmar restauração':'Confirmar retirada',{type:'button'});confirm.addEventListener('click',action(async()=>{const result=await api('/registrations/'+r.id+'/documents/'+id+'/'+(archived?'restore':'withdraw'),{method:'POST',data:{version:r.version,checked:true}});await review(r.id);notice(result.message)}));details.append(confirm);card.append(details);return card;
+ }
+ for(const d of r.documents)section.append(row(d,false));
+ if(r.withdrawn_files?.length){const retired=el('details');retired.append(el('summary','Arquivos retirados ('+r.withdrawn_files.length+')'));for(const d of r.withdrawn_files)retired.append(row(d,true));section.append(retired)}
+ box.append(section);
+}
+function restrictedSupportControl(box,owner){
+ if(me.role!=='admin'&&!(me.role==='secretary'&&me.secretary_level==='general'))return;
+ const area=el('details'),content=el('div'),path='/'+owner+'/restricted-support';area.append(el('summary','Apoio e laudo restritos'),content);box.append(area);
+ let epoch=0;
+ async function render(){
+  const key=++epoch;content.replaceChildren(el('p','Consultando registros…',{role:'status'}));
+  const {entries}=await api(path);if(!area.isConnected||!area.open||key!==epoch)return;
+  content.replaceChildren(el('p','Somente administração e secretaria geral autorizadas no núcleo. Descreva o apoio relatado pela família ou observado na aula. Não registre suspeitas como diagnóstico. Laudo é opcional e não é requisito para registrar presença.'));
+  for(const e of entries){const card=el('div',undefined,{class:'case-file-row'});card.append(el('strong',new Date(e.created_at).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'})));if(e.note)card.append(el('p',e.note));
+   if(e.has_file){const b=el('button','Baixar laudo',{type:'button',class:'secondary'});b.addEventListener('click',action(async()=>{const blob=await api(path+'/'+e.id+'/download',{blob:true});download(blob,'laudo.'+({'application/pdf':'pdf','image/jpeg':'jpg','image/png':'png'}[blob.type]||'bin'))}));card.append(b)}
+   const remove=el('details');remove.append(el('summary','Retirar este registro de apoio'),el('p','O texto e o arquivo deixarão de estar disponíveis nesta área.'));const b=el('button','Confirmar retirada do registro',{type:'button'});b.addEventListener('click',action(async()=>{await api(path+'/'+e.id+'/withdraw',{method:'POST',data:{checked:true}});await render();notice('Registro retirado.')}));remove.append(b);card.append(remove);content.append(card)}
+  if(!entries.length)content.append(el('p','Nenhum apoio ou laudo registrado.'));
+  const form=el('form'),label=el('label','Observação sobre apoio (opcional)'),note=el('textarea',undefined,{name:'note',maxlength:1500,rows:3});label.append(note);form.append(label);
+  const file=field(form,'Laudo opcional · PDF, JPG ou PNG, até 5 MB','file','',{type:'file'});file.accept='.pdf,.png,.jpg,.jpeg';
+  const l=el('label',undefined,{class:'check-label'}),check=el('input',undefined,{type:'checkbox',required:''});l.append(check,document.createTextNode('Conferi a finalidade, a autorização para guardar estas informações e a ficha da pessoa correta.'));form.append(l,el('button','Salvar registro restrito'));
+  let id=crypto.randomUUID();form.addEventListener('input',()=>id=crypto.randomUUID());
+  form.addEventListener('submit',action(async()=>{if(!note.value.trim()&&!file.files.length)throw Error('Escreva a observação ou selecione o laudo.');if(file.files[0]?.size>5*1024*1024)throw Error('O limite do arquivo é 5 MB.');const data=new FormData(form);data.set('id',id);data.set('checked',String(check.checked));const result=await api(path,{method:'POST',form:data});await render();notice(result.message)}));content.append(form);
+ }
+ area.addEventListener('toggle',action(async()=>{if(area.open)await render();else{epoch++;content.replaceChildren()}}));
+}
+function registrationUploader(box,id,r){const form=el('form');form.append(el('h4','Anexar documentos restantes do candidato'));form.append(el('p','Envie somente o documento correspondente. Deixe a categoria pendente se o documento ainda não chegou. Laudos ficam em Apoio e laudo restritos.'));field(form,'Categoria do anexo','kind','',{options:{'':'Escolha a categoria',...kinds}}).required=true;const file=field(form,'Arquivo do candidato (PDF, JPG ou PNG, até 5 MB)','file','',{type:'file'});file.accept='.pdf,.jpg,.jpeg,.png';file.required=true;form.append(el('button','Enviar documento do candidato'));form.addEventListener('submit',action(async()=>{const data=new FormData(form);data.set('version',r.version);const p=await api('/registrations/'+id+'/documents',{method:'POST',form:data});await review(id);notice(p.message)}));box.append(form)}
 function setupManualRegistration(){if($('manual-prospect'))return;const button=el('button','Cadastrar candidato recebido por email ou presencialmente',{class:'secondary'}),box=el('section',undefined,{id:'manual-prospect',hidden:''});$('registrations-area').querySelector('h2').after(button,box);button.addEventListener('click',()=>{box.hidden=!box.hidden;if(!box.hidden)box.scrollIntoView({behavior:'smooth',block:'start'})});box.append(el('h3','Novo candidato — pendente de aprovação'),el('p','Use os dados da ficha recebida e mantenha a comprovação das declarações. O cadastro fica pendente e não recebe ID de aluno até a aprovação do administrador.'));
  const form=el('form');field(form,'Nome completo do candidato','student_name','').required=true;field(form,'Nascimento do candidato','birth_date','',{type:'date'}).required=true;field(form,'Núcleo solicitado','unit','amavale',{options:scopeUnitNames()});
  for(const [k,label]of Object.entries({guardian_name:'Responsável pelo candidato',guardian_email:'Email do responsável pelo candidato',guardian_phone:'Telefone do responsável pelo candidato',relationship:'Vínculo do responsável',source_reference:'Referência da ficha original ou protocolo do email',consent_version:'Versão/data das declarações aceitas na ficha original'}))field(form,label,k,'',{type:k==='guardian_email'?'email':k==='guardian_phone'?'tel':'text'}).required=true;

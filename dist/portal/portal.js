@@ -60,6 +60,7 @@ async function detail(id){const request=Symbol(),target=$('detail'),box=el('div'
  const editable=['admin','secretary','guardian'].includes(me.role),staff=['admin','secretary'].includes(me.role);
  const back=el('button','Voltar à lista de alunos',{class:'secondary'});back.addEventListener('click',()=>{$('search').scrollIntoView({behavior:'smooth',block:'start'});$('search').focus({preventScroll:true})});box.append(el('p','Núcleo: '+({UND1:'Amavale',UND2:'Valparaíso',UND3:'Vale do Carangola'}[s.id.slice(0,4)])),back);
  if(editable)await showStudentContact(id,box);
+ if(staff)restrictedSupportControl(box,'students/'+id);
  const form=el('form'),grid=el('div',undefined,{class:'grid'});form.append(grid);
  const make=(label,name,opts={})=>{const wrap=el('div');grid.append(wrap);return field(wrap,label,name,s[name],opts)};
  make('Nome do aluno','name',{readOnly:!staff});make('Data de nascimento','birth_date',{type:'date',readOnly:!staff});make('Situação do cadastro','status',{readOnly:!['admin','secretary'].includes(me.role),options:{approved:'Aprovado',pending:'Em análise',inactive:'Inativo'}});
@@ -100,7 +101,7 @@ api('/status').then(async p=>{if(p.enabled){
  $('login').hidden=false;notice('Entre com o email previamente habilitado. A sessão dura até 6 horas nesta aba. Use Sair ao terminar.');
  }else notice('O portal privado está em preparação. Você pode continuar solicitando atendimento pelo link acima.')}).catch(e=>{if(!me)$('login').hidden=false;notice(e.message,true)});
 
-import('/portal/system-sync.js').then(({startSystemSync})=>startSystemSync({api,el,active:()=>!!me&&!!token,hasDraft:()=>!!document.querySelector('#registrations-area.is-current #registration-detail:not([hidden]) form')||!!document.querySelector('#review-detail:not([hidden]) form')||!!document.querySelector('#quick-intakes-area .intake-task[open]')||!!document.querySelector('.quick-intake .quick-entry[open]')||typeof attendanceDrafts!=='undefined'&&[...attendanceDrafts.values()].some(rows=>[...rows.values()].some(r=>r.dirty)),refresh:async()=>{
+import('/portal/system-sync.js').then(({startSystemSync})=>startSystemSync({api,el,active:()=>!!me&&!!token,hasDraft:()=>!!document.querySelector('#detail details[open] textarea[name="note"]')||!!document.querySelector('#registrations-area.is-current #registration-detail:not([hidden]) form')||!!document.querySelector('#review-detail:not([hidden]) form')||!!document.querySelector('#quick-intakes-area .intake-task[open]')||!!document.querySelector('.quick-intake .quick-entry[open]')||typeof attendanceDrafts!=='undefined'&&[...attendanceDrafts.values()].some(rows=>[...rows.values()].some(r=>r.dirty)),refresh:async()=>{
  const reopenCall=typeof classSelected!=='undefined'&&classSelected&&typeof currentPanel!=='undefined'&&currentPanel==='attendance-area'&&!$('class-detail')?.hidden?classSelected:null;
  const registrationBox=$('registration-detail'),reopenRegistration=typeof currentPanel!=='undefined'&&currentPanel==='registrations-area'&&!registrationBox?.hidden?registrationBox?.dataset.registrationId:null,registrationRequest=typeof review==='function'?review.request:null;
  me=await api('/me');

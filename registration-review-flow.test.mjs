@@ -15,12 +15,41 @@ async function fixture(t){
  const tokenFor=m=>{const token=randomBytes(32).toString('base64url');db.prepare('INSERT INTO sessions VALUES(?,?,?)').run(createHash('sha256').update(token).digest('hex'),m.user_id,Date.now()+3600000);return token};
  const tokens={admin:tokenFor(admin)};
  for(const [key,units]of [['local',['amavale']],['other',['valparaiso']],['general',['amavale','valparaiso','vale-do-carangola']]]){const m=await store.saveStaffAccount(admin.user_id,null,{name:'Secretaria Fictícia',email:key+'@example.test',phone:'24999999999',role:'secretary',secretary_level:key==='general'?'general':'local',active:true,units,version:0});tokens[key]=tokenFor(m);}
+ const addRole=role=>{const uid=randomUUID();db.prepare('INSERT INTO members(user_id,email,role,active) VALUES(?,?,?,1)').run(uid,role+'@example.test',role);tokens[role]=tokenFor({user_id:uid})};
  const req=(route,{as='admin',method='GET',data,form}={})=>handlePortal(new Request(env.PUBLIC_ORIGIN+'/api/portal'+route,{method,headers:{Origin:env.PUBLIC_ORIGIN,...(as?{Authorization:'Bearer '+tokens[as]}:{}),...(data?{'Content-Type':'application/json'}:{})},body:form||(data?JSON.stringify(data):undefined)}),env,store);
  const fields=(id=randomUUID())=>({id,student_name:'Candidato Fictício',birth_date:'2017-01-01',unit:'amavale',guardian_name:'Responsável Fictício',guardian_email:'guardian@example.test',guardian_phone:'24999999999',relationship:'Mãe'});
  const create=async(attachments=completeRegistrationAttachments())=>{const row=fields();await persistRegistration(store,row,attachments);return row.id;};
  let now=Date.now();const notices=registrationNotices({db,get:(sql,...p)=>db.prepare(sql).get(...p),all:(sql,...p)=>db.prepare(sql).all(...p),run:(sql,...p)=>db.prepare(sql).run(...p),tx:fn=>{db.exec('BEGIN IMMEDIATE');try{const v=fn();db.exec('COMMIT');return v}catch(e){db.exec('ROLLBACK');throw e}},env,clock:()=>now});
- return {dir,env,store,db,admin,req,fields,create,notices,advance:ms=>now+=ms};
+ return {dir,env,store,db,admin,req,fields,create,notices,addRole,advance:ms=>now+=ms};
 }
+
+test('A correção atinge só o arquivo escolhido e suas cópias na ficha, pode ser desfeita e recalcula pendências',async t=>{
+ const f=await fixture(t),id=await f.create(),base='/registrations/'+id,read=async()=>(await(await f.req(base)).json()).registration;
+ f.addRole('guardian');let r=await read();const doc=r.documents.find(x=>x.kind==='photo'),file=base+'/documents/'+doc.id,change=(op,version,as='general')=>f.req(file+'/'+op,{as,method:'POST',data:{version,checked:true}});
+ assert.equal((await change('withdraw',r.version,'other')).status,403);
+ assert.equal((await change('withdraw',r.version,'guardian')).status,403);
+ assert.equal((await change('withdraw',r.version)).status,200);assert.equal((await change('withdraw',r.version)).status,409);
+ r=await read();assert.deepEqual(r.readiness.missing,['Foto de registro']);assert.equal(r.withdrawn_files[0].id,doc.id);assert.equal((await f.req(file)).status,404);
+ assert.equal((await change('restore',r.version)).status,200);r=await read();assert.equal(r.readiness.ready,true);
+ const approved=await f.req(base+'/review',{method:'POST',data:{decision:'approved',checked:true,version:r.version,reason:''}}),sid=(await approved.json()).student_id;assert.ok(sid);
+ r=await read();assert.equal((await change('withdraw',r.version)).status,200);r=await read();assert.equal(r.status,'approved');assert.equal((await f.store.documents(sid)).length,3);assert.equal((await f.req('/documents/'+doc.id+'/download')).status,404);
+ assert.equal((await change('restore',r.version)).status,200);assert.equal((await f.store.documents(sid)).length,4);assert.equal((await f.req(file)).status,200);
+});
+
+test('Laudo opcional e apoio ficam isolados dos documentos, chamada, outros núcleos e demais perfis',async t=>{
+ const f=await fixture(t),id=await f.create(),other=await f.create(),base='/registrations/'+id,rp=base+'/restricted-support',doc=randomUUID(),note='Apoio fictício: prefere demonstração antes do exercício.';
+ for(const role of ['guardian','teacher','psychologist','social_worker'])f.addRole(role);
+ const form=(checked=true,wrong=false)=>{const m=new FormData();m.set('note',note);m.set('id',doc);m.set('checked',String(checked));m.set('file',new Blob([wrong?'texto':'%PDF-1.7 exemplo'],{type:'application/pdf'}),'exemplo.pdf');return m};
+ for(const as of ['local','other','guardian','teacher','psychologist','social_worker','']){assert.ok([401,403].includes((await f.req(rp,{as})).status));assert.ok([401,403].includes((await f.req(rp,{as,method:'POST',form:form()})).status));}
+ assert.equal((await f.req(rp,{method:'POST',form:form(false)})).status,400);assert.equal((await f.req(rp,{method:'POST',form:form(true,true)})).status,400);
+ for(let i=0;i<2;i++)assert.equal((await f.req(rp,{as:'general',method:'POST',form:form()})).status,201);
+ const {entries}=await(await f.req(rp)).json();assert.equal(entries.length,1);assert.equal(entries[0].note,note);assert.equal(entries[0].object_path,undefined);
+ assert.equal((await f.req(rp+'/'+doc+'/download',{as:'local'})).status,403);assert.equal((await f.req('/registrations/'+other+'/restricted-support/'+doc+'/download')).status,404);
+ assert.equal(await(await f.req(rp+'/'+doc+'/download')).text(),'%PDF-1.7 exemplo');const r=(await(await f.req(base)).json()).registration;assert.equal(r.documents.length,4);assert.doesNotMatch(JSON.stringify(r),/Apoio fictício/);
+ const cloned=(await f.req(base+'/review',{method:'POST',data:{decision:'approved',checked:true,version:r.version,reason:''}}));const {student_id:sid}=await cloned.json();assert.ok(sid);
+ const studentPath='/students/'+sid+'/restricted-support';assert.equal((await(await f.req(studentPath)).json()).entries[0].id,doc);assert.equal((await f.req(studentPath+'/'+doc+'/withdraw',{method:'POST',data:{checked:true}})).status,200);
+ assert.equal((await f.req(rp+'/'+doc+'/download')).status,404);assert.equal((await(await f.req(studentPath)).json()).entries.length,0);assert.doesNotMatch(JSON.stringify(await f.store.auditLog()),/prefere demonstração/);
+});
 
 test('Inscrição: protocolo encontra ficha independentemente da lista; documentos públicos podem ser baixados pela secretaria do núcleo',async t=>{
  const f=await fixture(t),id=await f.create();
