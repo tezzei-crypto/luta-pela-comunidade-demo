@@ -5,11 +5,14 @@ export function whatsappNotices({db,get,all,run,tx,requireRole,audit,env,transpo
  db.exec(`CREATE TABLE IF NOT EXISTS whatsapp_settings(id INTEGER PRIMARY KEY CHECK(id=1),phone TEXT NOT NULL,enabled INTEGER NOT NULL DEFAULT 0,version INTEGER NOT NULL DEFAULT 1);
  CREATE TABLE IF NOT EXISTS whatsapp_optins(user_id TEXT PRIMARY KEY REFERENCES members(user_id),phone TEXT NOT NULL,accepted INTEGER NOT NULL,version INTEGER NOT NULL,updated_at TEXT NOT NULL,actor TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS whatsapp_notices(kind TEXT NOT NULL,issue_id TEXT NOT NULL,user_id TEXT NOT NULL,phone TEXT NOT NULL,status TEXT NOT NULL,provider_id TEXT NOT NULL DEFAULT '',updated_at INTEGER NOT NULL,PRIMARY KEY(kind,issue_id,user_id));`);
+ // Store only allowlisted numeric diagnostics, never provider bodies or credentials.
+ const columns=new Set(all('PRAGMA table_info(whatsapp_notices)').map(c=>c.name));
+ for(const name of ['http_status','error_code','error_subcode'])if(!columns.has(name))db.exec(`ALTER TABLE whatsapp_notices ADD COLUMN ${name} INTEGER`);
  run('INSERT OR IGNORE INTO whatsapp_settings(id,phone) VALUES(1,?)',get('SELECT phone FROM project_contact WHERE id=1')?.phone||'');
  const read=()=>get('SELECT * FROM whatsapp_settings WHERE id=1');
  const connected=s=>!!(env.WHATSAPP_ACCESS_TOKEN&&/^\d{5,30}$/.test(env.WHATSAPP_PHONE_NUMBER_ID||'')&&/^v\d{1,3}\.0$/.test(env.WHATSAPP_API_VERSION||'')&&/^[a-z0-9_]{1,512}$/.test(env.WHATSAPP_TEMPLATE||'')&&/^[a-z]{2}(?:_[A-Z]{2})?$/.test(env.WHATSAPP_LANGUAGE||'')&&env.WHATSAPP_SENDER_PHONE===s.phone);
  const permitted=['admin','secretary','teacher','psychologist','social_worker'];
- function settings(actor){requireRole(actor,['admin']);const s=read();return {...s,enabled:!!s.enabled,connected:connected(s),recipients:all(`SELECT m.user_id,m.email,m.role,COALESCE(o.phone,'') AS phone,COALESCE(o.accepted,0) AS accepted,COALESCE(o.version,0) AS version FROM members m LEFT JOIN whatsapp_optins o ON o.user_id=m.user_id WHERE m.active=1 AND m.role<>'guardian' ORDER BY m.role,m.email`),deliveries:all('SELECT n.kind,n.status,n.updated_at,m.email FROM whatsapp_notices n JOIN members m ON m.user_id=n.user_id ORDER BY n.updated_at DESC LIMIT 50')}}
+ function settings(actor){requireRole(actor,['admin']);const s=read();return {...s,enabled:!!s.enabled,connected:connected(s),recipients:all(`SELECT m.user_id,m.email,m.role,COALESCE(o.phone,'') AS phone,COALESCE(o.accepted,0) AS accepted,COALESCE(o.version,0) AS version FROM members m LEFT JOIN whatsapp_optins o ON o.user_id=m.user_id WHERE m.active=1 AND m.role<>'guardian' ORDER BY m.role,m.email`),deliveries:all('SELECT n.kind,n.status,n.updated_at,n.http_status,n.error_code,n.error_subcode,m.email FROM whatsapp_notices n JOIN members m ON m.user_id=n.user_id ORDER BY n.updated_at DESC LIMIT 50')}}
  let running=false;
  return {
   async whatsappSettings(actor){return settings(actor)},
@@ -32,12 +35,16 @@ export function whatsappNotices({db,get,all,run,tx,requireRole,audit,env,transpo
      if(!targets().some(t=>t.kind===candidate.kind&&t.issue_id===candidate.issue_id&&t.user_id===candidate.user_id))continue;
      const o=get('SELECT o.* FROM whatsapp_optins o JOIN members m ON m.user_id=o.user_id WHERE o.user_id=? AND o.accepted=1 AND m.active=1',candidate.user_id);if(!o)continue;
      const claimed=tx(()=>run("INSERT OR IGNORE INTO whatsapp_notices(kind,issue_id,user_id,phone,status,updated_at) VALUES(?,?,?,?,'sending',?)",candidate.kind,candidate.issue_id,candidate.user_id,o.phone,Date.now()).changes);if(!claimed)continue;
-     let id='',status='review';
+     let id='',status='review',httpStatus=null,errorCode=null,errorSubcode=null;
      try{const response=await transport(`https://graph.facebook.com/${env.WHATSAPP_API_VERSION}/${env.WHATSAPP_PHONE_NUMBER_ID}/messages`,{method:'POST',headers:{Authorization:'Bearer '+env.WHATSAPP_ACCESS_TOKEN,'Content-Type':'application/json'},body:JSON.stringify({messaging_product:'whatsapp',recipient_type:'individual',to:o.phone.slice(1),type:'template',template:{name:env.WHATSAPP_TEMPLATE,language:{code:env.WHATSAPP_LANGUAGE}}}),signal:AbortSignal.timeout(10000)});
-      if(response.ok){id=(await response.json()).messages?.[0]?.id||'';status=id?'accepted':'review'}else status='failed';
+      httpStatus=Number.isInteger(response.status)?response.status:null;
+      if(response.ok){id=(await response.json()).messages?.[0]?.id||'';status=id?'accepted':'review'}else{
+       status='failed';
+       try{const error=(await response.json()).error;errorCode=Number.isSafeInteger(error?.code)?error.code:null;errorSubcode=Number.isSafeInteger(error?.error_subcode)?error.error_subcode:null}catch{}
+      }
      }catch{}
      // Meta does not promise idempotency here. Ambiguous results require review, never blind resend.
-     run('UPDATE whatsapp_notices SET status=?,provider_id=?,updated_at=? WHERE kind=? AND issue_id=? AND user_id=?',status,id,Date.now(),candidate.kind,candidate.issue_id,candidate.user_id);audit('system','whatsapp.notice.'+status+':'+candidate.kind+':'+candidate.issue_id+':'+candidate.user_id);
+     run('UPDATE whatsapp_notices SET status=?,provider_id=?,updated_at=?,http_status=?,error_code=?,error_subcode=? WHERE kind=? AND issue_id=? AND user_id=?',status,id,Date.now(),httpStatus,errorCode,errorSubcode,candidate.kind,candidate.issue_id,candidate.user_id);audit('system','whatsapp.notice.'+status+':'+candidate.kind+':'+candidate.issue_id+':'+candidate.user_id);
     }
    }finally{running=false}
   }

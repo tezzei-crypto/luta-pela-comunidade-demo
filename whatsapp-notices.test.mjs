@@ -20,3 +20,29 @@ test('WhatsApp: envio oficial mínimo, uma vez por ocorrência mesmo com dois pr
 test('WhatsApp: falha ambígua não repete automaticamente; resolução e revogação cancelam antes de enviar',async t=>{
  const f=fixture(t);await f.connect();await f.consent();f.rows=[];await f.api.deliverWhatsappNotices();assert.equal(f.sent.length,0);f.rows=[{kind:'rollcall',issue_id:'two',user_id:'t'}];f.transport=async()=>{f.sent.push('attempt');throw Error('timeout')};await f.api.deliverWhatsappNotices();await f.newWorker().deliverWhatsappNotices();assert.equal(f.sent.length,1);assert.equal((await f.api.whatsappSettings('a')).deliveries[0].status,'review');f.db.exec("UPDATE members SET active=0 WHERE user_id='t'");f.rows.push({kind:'absence',issue_id:'three',user_id:'t'});await f.api.deliverWhatsappNotices();assert.equal(f.sent.length,1);
 });
+
+test('WhatsApp: falha HTTP conserva somente códigos numéricos e nunca é reenviada após reinício',async t=>{
+ const f=fixture(t);await f.connect();await f.consent();
+ f.transport=async()=>{f.sent.push('attempt');return Response.json({error:{code:131042,error_subcode:2494010,message:'private token and phone',error_data:{details:'private payload'}}},{status:400})};
+ await f.api.deliverWhatsappNotices();await f.newWorker().deliverWhatsappNotices();
+ const row=f.db.prepare('SELECT * FROM whatsapp_notices').get();
+ assert.equal(row.status,'failed');assert.equal(row.http_status,400);assert.equal(row.error_code,131042);assert.equal(row.error_subcode,2494010);assert.equal(f.sent.length,1);assert.doesNotMatch(JSON.stringify(row),/private|payload|token/);assert.equal((await f.api.whatsappSettings('a')).deliveries[0].error_code,131042);await assert.rejects(f.api.whatsappSettings('t'),{status:403});
+});
+
+test('WhatsApp: migração preserva falhas antigas e deduplicação sem preencher diagnóstico inexistente',async t=>{
+ const f=fixture(t);await f.connect();await f.consent();
+ f.db.exec("DROP TABLE whatsapp_notices;CREATE TABLE whatsapp_notices(kind TEXT NOT NULL,issue_id TEXT NOT NULL,user_id TEXT NOT NULL,phone TEXT NOT NULL,status TEXT NOT NULL,provider_id TEXT NOT NULL DEFAULT '',updated_at INTEGER NOT NULL,PRIMARY KEY(kind,issue_id,user_id));INSERT INTO whatsapp_notices VALUES('absence','one','t','+5524988881111','failed','',123)");
+ await f.newWorker().deliverWhatsappNotices();
+ const row=f.db.prepare('SELECT * FROM whatsapp_notices').get();assert.equal(row.status,'failed');assert.equal(row.updated_at,123);assert.equal(row.http_status,null);assert.equal(row.error_code,null);assert.equal(f.sent.length,0);
+});
+
+test('WhatsApp: erro sem JSON permanece failed sem vazamento ou repetição',async t=>{
+ const f=fixture(t);await f.connect();await f.consent();
+ f.transport=async()=>{f.sent.push('attempt');return new Response('private upstream HTML',{status:502})};
+ await f.api.deliverWhatsappNotices();await f.newWorker().deliverWhatsappNotices();
+ const row=f.db.prepare('SELECT * FROM whatsapp_notices').get();assert.equal(row.status,'failed');assert.equal(row.http_status,502);assert.equal(row.error_code,null);assert.equal(f.sent.length,1);assert.doesNotMatch(JSON.stringify(row),/private|HTML/);
+});
+
+test('WhatsApp: códigos não numéricos são descartados e não mudam a deduplicação',async t=>{
+ const f=fixture(t);await f.connect();await f.consent();f.transport=async()=>{f.sent.push('attempt');return Response.json({error:{code:'secret',error_subcode:{private:'secret'}}},{status:403})};await f.api.deliverWhatsappNotices();await f.newWorker().deliverWhatsappNotices();const row=f.db.prepare('SELECT * FROM whatsapp_notices').get();assert.equal(row.http_status,403);assert.equal(row.error_code,null);assert.equal(row.error_subcode,null);assert.equal(f.sent.length,1);assert.doesNotMatch(JSON.stringify(await f.api.whatsappSettings('a')),/secret/);
+});
