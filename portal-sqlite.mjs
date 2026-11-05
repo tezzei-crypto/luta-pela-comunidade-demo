@@ -10,6 +10,7 @@ import {quickIntake} from './quick-intake.mjs';
 import {classReview} from './class-review.mjs';
 import {operationsTools} from './operations-tools.mjs';
 import {whatsappNotices} from './whatsapp-notices.mjs';
+import {whatsappAgendaBot} from './whatsapp-agenda-bot.mjs';
 import {classEvidence} from './class-evidence.mjs';
 import {unitScope,scopedSecretaryStore} from './unit-scope.mjs';
 import {appointmentNotices} from './appointment-notices.mjs';
@@ -115,6 +116,7 @@ export function createSqliteStore(env,{transport=fetch}={}){
   ...contactSettings({db,get,run,tx,requireRole,audit}),...insights,...rollcalls,...staff,...project,...evidence,...teaching,...professionals,...scheduling,...workforceTools({db,get,all,run,tx,requireRole,scope,audit}),...studentDetails({db,get,all,run,tx,requireRole,scope,audit,officialStart,onManualRegistration:(actor,p,id)=>{if(p.quick_intake_id)api.attachIntakeRegistration(actor,p.quick_intake_id,id)}}),
   ...agendaNotices,
   ...whatsappNotices({db,get,all,run,tx,requireRole,audit,env,transport,targets:()=>[...insights.absenceWhatsappTargets(),...rollcalls.rollcallWhatsappTargets()]}),
+  ...whatsappAgendaBot({db,get,all,run,tx,env,transport,scheduling,professionalApproved:professionals.professionalApproved,audit}),
   async sendBookingNotice(actor,id){await scheduling.booking(actor,id);await agendaNotices.sendPrivateNotice(id)},
   close:()=>db.close(),
   async requestCode(email){

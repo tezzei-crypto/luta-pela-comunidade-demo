@@ -8,6 +8,7 @@ import {clientAddress} from './client-address.mjs';
 import {withSocialPreview} from './social-preview.mjs';
 import {editorPages} from './site-editor-template.mjs';
 import {handleContact} from './contact-handler.mjs';
+import {handleWhatsappAgendaWebhook} from './whatsapp-agenda-bot.mjs';
 import {initializePortal} from './portal-bootstrap.mjs';
 import {handleAccess} from './access-handler.mjs';
 import {handlePortal} from './portal-handler.mjs';
@@ -18,6 +19,9 @@ import {handleSponsorship} from './sponsorship-handler.mjs';
 import http from 'node:http';import fs from 'node:fs';import path from 'node:path';import {fileURLToPath} from 'node:url';import {handleRegistration} from './registration-handler.mjs';
 const root=path.join(path.dirname(fileURLToPath(import.meta.url)),'dist');const port=Number(process.env.PORT||4174);const limits=new Map();
 await initializePortal(process.env);
+let whatsappAgendaRunning=false;
+async function whatsappAgendaJob(){if(whatsappAgendaRunning||process.env.WHATSAPP_AGENDA_BOT_ENABLED!=='true'||!portalConfigured(process.env))return;whatsappAgendaRunning=true;try{await createStore(process.env).deliverWhatsappAgenda()}catch{console.error('Agenda WhatsApp: operação pendente de conferência.')}finally{whatsappAgendaRunning=false}}
+setInterval(whatsappAgendaJob,5000).unref();
 let attendanceJobRunning=false;
 async function attendanceJob(){if(attendanceJobRunning||!portalConfigured(process.env))return;attendanceJobRunning=true;try{const store=createStore(process.env);await store.deliverAttendanceNotices();await store.deliverRollcallNotices();await store.deliverAppointmentNotices();await store.deliverWhatsappNotices()}catch{console.error('Não foi possível concluir a verificação automática de frequência; nova tentativa em cinco minutos.')}finally{attendanceJobRunning=false}}
 setInterval(attendanceJob,300000).unref();setTimeout(attendanceJob,1000).unref();
@@ -40,6 +44,10 @@ async function serveRequest(req,res){
  let url;try{url=new URL(req.url,requestOrigin(req.headers.host,process.env))}catch{res.writeHead(400).end();return}
  const send=async response=>{const headers=Object.fromEntries(response.headers);if(response.ok&&headers['x-backup-sha256']){res.writeHead(response.status,headers);await pipeline(Readable.fromWeb(response.body),res);return}let payload=Buffer.from(await response.arrayBuffer());if(response.status>=400&&headers['content-type']?.includes('application/json')){try{payload=Buffer.from(JSON.stringify({...JSON.parse(payload),support_id:req.headers['x-support-id']}));delete headers['content-length']}catch{}}res.writeHead(response.status,headers);res.end(payload)};
  if(url.pathname==='/api/diagnostics'){await handleClientDiagnostic(req,res,url,process.env);return;}
+ if(url.pathname==='/api/whatsapp/agenda-webhook'){
+  const chunks=[];let size=0;for await(const chunk of req){size+=chunk.length;if(size>65536){res.writeHead(413).end();return}chunks.push(chunk)}
+  try{await send(await handleWhatsappAgendaWebhook(new Request(url,{method:req.method,headers:req.headers,...(!['GET','HEAD'].includes(req.method)?{body:Buffer.concat(chunks)}:{})}),process.env,createStore))}catch{await send(Response.json({received:false},{status:503,headers:{'Cache-Control':'no-store'}}))}return;
+ }
 
  if(['/api/contact','/api/contact/whatsapp','/api/contact/conversation'].includes(url.pathname)){await send(await handleContact(new Request(url,{method:req.method}),process.env));return;}
  const siteMedia=/^\/site-media\/([a-f0-9-]{36})\.webp$/.exec(url.pathname);
