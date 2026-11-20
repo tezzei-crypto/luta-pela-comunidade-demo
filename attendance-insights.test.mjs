@@ -29,6 +29,35 @@ async function fixture(t,options={}){
  const care=async(role,unit='amavale')=>{const email=role+'-'+unit+'@example.test',p={name:'Profissional Fictício',email,role,phone:'24999999999',rg:'TESTE',cpf:'52998224725',council_number:'TESTE',council_region:'RJ',review_until:'2099-01-01',status:'pending',version:0,units:[unit]};let user=await store.saveProfessional(admin.user_id,null,p);for(const kind of ['photo','council'])await store.addProfessionalDocument(admin.user_id,user.user_id,{id:randomUUID(),kind,object_path:'fake/'+randomUUID(),mime:'image/png',size:20,original_name:'fake'});user=await store.professional(admin.user_id,user.user_id);return store.saveProfessional(admin.user_id,user.user_id,{...p,status:'verified',checked:true,version:user.version})};
  return {get store(){return store},transport,env,dir,admin,sec,guardian,teacher,otherTeacher,group,other,pupils,dates,lesson,mail,login,request,care,data,reopen(){store.close();store=createSqliteStore(env,{transport})}};
 }
+test('WhatsApp de chamada inclui monitor ativo do núcleo com conta da equipe, sem duplicar professor nem ampliar acesso',async t=>{
+ const f=await fixture(t),clock=new Date(localDay()+'T19:30:00-03:00');
+ const data={name:'Monitor Fictício',email:f.otherTeacher.email,phone:'24999999999',notes:'',active:true,version:0,units:['amavale']};
+ const monitor=await f.store.saveMonitor(f.admin.user_id,null,data);
+ const ids=()=>f.store.rollcallWhatsappTargets(clock).filter(x=>x.user_id===f.otherTeacher.user_id);
+ assert.equal(ids().length,2);assert.equal(new Set(ids().map(x=>x.issue_id)).size,2);
+ const c=await f.store.createClass(f.admin.user_id,{group_id:f.group.id,day:localDay()});
+ await assert.rejects(f.store.markAttendance(f.otherTeacher.user_id,c.id,[{id:f.pupils[0].id,status:'present',version:0}]),{status:403});
+ await f.store.saveMonitor(f.admin.user_id,monitor.id,{...data,units:['valparaiso'],version:1});assert.equal(ids().length,1);
+ await f.store.saveMonitor(f.admin.user_id,monitor.id,{...data,active:false,version:2});assert.equal(ids().length,1);
+ await f.store.saveMonitor(f.admin.user_id,null,{...data,email:f.guardian.email});assert.ok(!f.store.rollcallWhatsappTargets(clock).some(x=>x.user_id===f.guardian.user_id));
+ await f.store.saveMonitor(f.admin.user_id,null,{...data,email:'without-account@example.test'});assert.equal(ids().length,1);
+ assert.equal(f.store.rollcallWhatsappTargets(new Date(localDay()+'T20:30:00-03:00')).length,0);
+});
+
+test('WhatsApp de monitor exige consentimento existente e preserva deduplicação em reinício',async t=>{
+ t.mock.timers.enable({apis:['Date'],now:+new Date(localDay()+'T19:30:00-03:00')});
+ const f=await fixture(t,{transport:async()=>Response.json({messages:[{id:'synthetic-provider-id'}]})});
+ await f.store.saveMonitor(f.admin.user_id,null,{name:'Monitor Fictício',email:f.otherTeacher.email,phone:'24999999999',notes:'',active:true,version:0,units:['amavale']});
+ const s=await f.store.whatsappSettings(f.admin.user_id);
+ Object.assign(f.env,{WHATSAPP_ACCESS_TOKEN:'synthetic-token',WHATSAPP_PHONE_NUMBER_ID:'123456',WHATSAPP_API_VERSION:'v99.0',WHATSAPP_TEMPLATE:'approved_test',WHATSAPP_LANGUAGE:'pt_BR',WHATSAPP_SENDER_PHONE:s.phone});
+ await f.store.saveWhatsappSettings(f.admin.user_id,{phone:s.phone,enabled:true,version:s.version});
+ await f.store.deliverWhatsappNotices();assert.equal(f.mail.length,0);
+ await f.store.saveWhatsappRecipient(f.admin.user_id,{user_id:f.otherTeacher.user_id,phone:'+5524999999999',accepted:true,version:0});
+ await f.store.deliverWhatsappNotices();assert.equal(f.mail.length,2);
+ assert.ok(f.mail.every(x=>x.type==='template'&&x.template.components===undefined));
+ f.reopen();await f.store.deliverWhatsappNotices();assert.equal(f.mail.length,2);
+ const rows=(await f.store.whatsappSettings(f.admin.user_id)).deliveries;assert.equal(rows.length,2);assert.ok(rows.every(x=>x.status==='accepted'));
+});
 for(const status of ['inactive','pending'])test('Lista histórica: cadastro '+status+' continua visível e pode concluir a chamada sem reativar matrícula',async t=>{
  const f=await fixture(t),day=localDay(),clock=new Date(day+'T23:00:00-03:00');
  const c=await f.store.createClass(f.admin.user_id,{group_id:f.group.id,day});

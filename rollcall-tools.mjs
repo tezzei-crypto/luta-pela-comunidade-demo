@@ -24,6 +24,9 @@ export function rollcallTools({db,get,all,run,tx,requireRole,scope,audit,env,tra
  const managers=unit=>all("SELECT user_id,email,role FROM members WHERE active=1 AND (role='admin' OR (role='secretary' AND EXISTS(SELECT 1 FROM administrative_units au WHERE au.user_id=members.user_id AND au.unit=?)))",unit);
  const teachers=group=>all("SELECT m.user_id,m.email,m.role,p.name FROM group_teachers gt JOIN members m ON m.user_id=gt.teacher_id JOIN teacher_profiles p ON p.user_id=m.user_id WHERE gt.group_id=? AND m.active=1 AND m.role='teacher' AND (p.status='verified' OR p.test_access=1) AND EXISTS(SELECT 1 FROM teacher_units tu WHERE tu.user_id=m.user_id AND tu.unit=?)",group.id,group.unit);
  const recipients=(g,day,p)=>[...(p.manager_email?managers(g.unit):[]),...(p.teacher_email&&day>=get("SELECT value FROM attendance_monitor_settings WHERE key='teacher_start_day'").value?teachers(g):[])];
+ // A monitor record does not grant portal access or consent. Match an existing active
+ // staff account in this unit; the WhatsApp sender rechecks that account's opt-in.
+ const monitorRecipients=unit=>all("SELECT DISTINCT m.user_id FROM monitors p JOIN monitor_units u ON u.monitor_id=p.id JOIN members m ON lower(m.email)=lower(p.email) WHERE p.active=1 AND p.email<>'' AND u.unit=? AND m.active=1 AND m.role IN ('admin','secretary','teacher')",unit);
  function reconcile(clock=new Date()){
   const p=policy(),now=+clock,today=brDay(clock),start=get("SELECT value FROM attendance_monitor_settings WHERE key='start_day'").value;
   // Never invent obligations before installation or before a group's creation.
@@ -62,7 +65,7 @@ export function rollcallTools({db,get,all,run,tx,requireRole,scope,audit,env,tra
  let delivering=false;
  return {
   rollcallReconcile:reconcile,
-  rollcallWhatsappTargets(){const clock=new Date(),p=policy();tx(()=>reconcile(clock));if(!p.enabled||quiet(p,clock))return [];return all("SELECT * FROM rollcall_issues WHERE status='open'").filter(i=>+clock>=+new Date(i.day+'T'+get('SELECT end_time FROM class_groups WHERE id=?',i.group_id).end_time+':00-03:00')+p.grace_minutes*60000).flatMap(i=>recipients(get('SELECT * FROM class_groups WHERE id=?',i.group_id),i.day,{...p,teacher_email:true,manager_email:true}).map(m=>({kind:'rollcall',issue_id:i.id,user_id:m.user_id})))},
+  rollcallWhatsappTargets(clock=new Date()){const p=policy();tx(()=>reconcile(clock));if(!p.enabled||quiet(p,clock))return [];return all("SELECT * FROM rollcall_issues WHERE status='open'").filter(i=>+clock>=+new Date(i.day+'T'+get('SELECT end_time FROM class_groups WHERE id=?',i.group_id).end_time+':00-03:00')+p.grace_minutes*60000).flatMap(i=>{const g=get('SELECT * FROM class_groups WHERE id=?',i.group_id),people=[...recipients(g,i.day,{...p,teacher_email:true,manager_email:true}),...monitorRecipients(g.unit)];return [...new Set(people.map(m=>m.user_id))].map(user_id=>({kind:'rollcall',issue_id:i.id,user_id}))})},
   checkRollcalls:clock=>tx(()=>reconcile(clock)),
   async rollcallSettings(actor){return settings(actor)},
   async saveRollcallSettings(actor,input){return tx(()=>{
